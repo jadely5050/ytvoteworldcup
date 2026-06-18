@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>vMix Layout (PGM)</title>
+<style>
+  /* 실제 송출(PGM) 출력. 송출 버튼을 눌러야 그래픽이 fade in 됩니다.
+     vMix → Add Input → Web Browser → http://localhost:3000/layout.html (Transparent Background 체크) */
+  html, body { margin: 0; padding: 0; width: 1920px; height: 1080px; background: transparent; overflow: hidden; }
+  iframe { border: 0; width: 1920px; height: 1080px; display: block; background: transparent; }
+</style>
+</head>
+<body>
+  <iframe src="/overlay.html?pgm=1" allowtransparency="true" scrolling="no"></iframe>
+</body>
+</html>

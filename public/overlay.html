@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>vMix Overlay</title>
+<style>
+  /* vMix Web Browser 입력은 body 배경이 투명하면 알파로 합성됩니다.
+     해상도는 1920x1080 기준으로 좌표 배치. vMix Input 크기도 1920x1080로. */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 1920px; height: 1080px;
+    background: transparent;
+    overflow: hidden;
+    font-family: "Pretendard", "Noto Sans KR", -apple-system, sans-serif;
+    color: #1a1a1a;
+  }
+  .stage { position: absolute; inset: 0; transition: opacity .6s ease; }
+
+  /* ---------- 하단 투표 패널 ---------- */
+  .poll {
+    position: absolute;
+    left: 60px; bottom: 60px;
+    width: 1480px;
+    background: rgba(248, 249, 251, 0.96);
+    border-radius: 22px;
+    padding: 22px 30px 26px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.35);
+    backdrop-filter: blur(4px);
+    transition: transform .3s ease;
+  }
+  /* 멀티(제일 ??한 ??은?) 그래픽은 전체 0.7배 */
+  .poll.compact { transform: scale(.7); transform-origin: left bottom; }
+
+  .poll-head { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+  .poll-head .q { font-size: 30px; font-weight: 800; letter-spacing: -.5px; }
+  .poll-head .qkr { font-size: 22px; font-weight: 600; color: #444; }
+  .poll-head .headtotal {
+    margin-left: auto; font-size: 34px; font-weight: 900; color: #111; line-height: 1;
+  }
+  .poll-head .headtotal small { font-size: 18px; font-weight: 700; color: #777; margin-left: 4px; }
+  .poll-head .live {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 15px; color: #555;
+  }
+  /* headtotal 이 보이면 그게 우측 정렬을 맡고, 없으면 live 가 맡음 */
+  .poll-head .headtotal[hidden] + .live { margin-left: auto; }
+  .live .badge {
+    background: #e23b2e; color: #fff; font-weight: 800; font-size: 14px;
+    padding: 5px 11px; border-radius: 20px; letter-spacing: .5px;
+    animation: pulse 1.6s infinite;
+  }
+  .live .badge.closed { background: #555; animation: none; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
+
+  /* 퍼센트 행 */
+  .pct-row { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 10px; }
+  .pct-side { display: flex; align-items: center; gap: 12px; }
+  .pct-side.right { flex-direction: row-reverse; }
+  .pct-num { font-size: 46px; font-weight: 900; line-height: 1; }
+  .pct-label { font-size: 19px; font-weight: 700; color: #333; }
+  .pct-mid { font-size: 18px; font-weight: 700; color: #777; padding-bottom: 6px; }
+
+  /* 게이지 바 */
+  .bar {
+    position: relative; height: 60px; border-radius: 12px; overflow: hidden;
+    display: flex; box-shadow: inset 0 2px 6px rgba(0,0,0,.18);
+  }
+  .bar .seg {
+    height: 100%; display: flex; align-items: center;
+    transition: width .6s cubic-bezier(.22,.61,.36,1);
+    color: #fff; font-weight: 800; font-size: 23px; white-space: nowrap;
+    overflow: hidden;
+  }
+  .bar .seg.left  { justify-content: flex-start; padding-left: 22px; }
+  .bar .seg.right { justify-content: flex-end;  padding-right: 22px; }
+  .seg .sub { font-size: 15px; font-weight: 600; opacity: .9; margin-left: 8px; }
+  .seg.right .sub { margin: 0 8px 0 0; }
+
+  .poll-foot {
+    text-align: center; margin-top: 12px;
+    font-size: 17px; font-weight: 700; color: #555;
+  }
+  .poll-foot b { color: #111; }
+
+  /* ---------- 멀티(3~5개) 가로막대 ---------- */
+  .multi { display: flex; flex-direction: column; gap: 14px; }
+  .mrow { display: flex; align-items: center; gap: 18px; }
+  .mrow .mname {
+    width: 300px; flex: none; font-size: 27px; font-weight: 800;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mrow .mtrack {
+    flex: 1; height: 50px; border-radius: 11px; overflow: hidden;
+    background: rgba(0,0,0,.07); box-shadow: inset 0 2px 6px rgba(0,0,0,.15);
+  }
+  .mrow .mfill {
+    height: 100%; min-width: 6px; border-radius: 11px;
+    transition: width .6s cubic-bezier(.22,.61,.36,1);
+    display: flex; align-items: center; justify-content: flex-end;
+    padding-right: 14px; color: #fff; font-weight: 800; font-size: 20px;
+  }
+  .mrow .mpct {
+    width: 130px; flex: none; text-align: right;
+    font-size: 38px; font-weight: 900; line-height: 1;
+  }
+  .mrow .mpct { transform-origin: right center; }
+  .mrow .mpct .mcnt { display: block; font-size: 15px; font-weight: 700; color: #888; }
+
+  /* ---------- 득표 강조 효과 ---------- */
+  /* 막대 트랙 번쩍번쩍 (2회 펄스) */
+  @keyframes barGlow {
+    0%, 100% { box-shadow: inset 0 2px 6px rgba(0,0,0,.15), 0 0 0 0 rgba(255,235,120,0); }
+    18%, 58% { box-shadow: inset 0 2px 6px rgba(0,0,0,.15), 0 0 28px 8px rgba(255,235,120,.98); }
+    38%, 80% { box-shadow: inset 0 2px 6px rgba(0,0,0,.15), 0 0 6px 1px rgba(255,235,120,.25); }
+  }
+  /* 막대 채움 색이 밝아졌다 돌아옴 */
+  @keyframes barBright {
+    0%, 100% { filter: brightness(1) saturate(1); }
+    18%, 58% { filter: brightness(1.5) saturate(1.35); }
+    38%, 80% { filter: brightness(1); }
+  }
+  .mrow.flash .mtrack { animation: barGlow .9s ease; }
+  .mrow.flash .mfill  { animation: barBright .9s ease; }
+
+  /* 숫자/퍼센트가 잠깐 커졌다 돌아옴 */
+  @keyframes numPop {
+    0%   { transform: scale(1); }
+    35%  { transform: scale(1.42); }
+    62%  { transform: scale(.94); }
+    100% { transform: scale(1); }
+  }
+  .mrow .mpct.pop { animation: numPop .62s cubic-bezier(.34,1.56,.64,1); }
+
+  /* ---------- 그림 모드 ---------- */
+  /* 그림 모드는 패널 폭을 내용에 맞춤(후보 수에 따라 가로폭 자동 조정) + 전체 0.7배 */
+  .poll.imgpanel { width: auto; max-width: 1800px; transform: scale(.7); transform-origin: left bottom; }
+  .imgmode {
+    display: flex; align-items: flex-end; justify-content: center;
+    gap: 40px; padding: 8px 4px 4px;
+  }
+  .icell { display: flex; align-items: center; gap: 4px; }
+  /* 알파 PNG가 패널 위에 그대로 올라감 (자체 배경 없음) */
+  .iart {
+    flex: none; display: flex; align-items: center; justify-content: center;
+    transform-origin: center center;
+  }
+  /* 그림 박스는 높이만 고정하고 폭은 그림에 맞춤(좌측 여백 제거) */
+  .iart img {
+    display: block; height: 100%; width: auto;
+    filter: drop-shadow(0 6px 14px rgba(0,0,0,.28));
+  }
+  .iart.placeholder {
+    align-items: center; border: 2px dashed rgba(0,0,0,.18); border-radius: 14px;
+    color: #999; font-weight: 800; font-size: 22px; text-align: center;
+  }
+  .inums { display: flex; flex-direction: column; align-items: flex-start; line-height: 1; }
+  .inums .icount { font-size: 46px; font-weight: 900; transform-origin: left center; }
+  .inums .ipct { font-size: 22px; font-weight: 800; color: #777; margin-top: 6px; }
+
+  /* 득표 시 "띠용" 바운스 (그림 + 숫자 공용) */
+  @keyframes boing {
+    0%   { transform: scale(1, 1); }
+    20%  { transform: scale(1.18, .86); }
+    45%  { transform: scale(.9, 1.14); }
+    65%  { transform: scale(1.06, .96); }
+    82%  { transform: scale(.98, 1.02); }
+    100% { transform: scale(1, 1); }
+  }
+  .iart.boing  { animation: boing .6s cubic-bezier(.28,1.5,.5,1); }
+  .icount.boing { animation: boing .6s cubic-bezier(.28,1.5,.5,1); }
+
+  /* ---------- 우측 채팅 패널 ---------- */
+  .chat {
+    position: absolute; right: 60px; bottom: 60px;
+    width: 300px; max-height: 360px;
+    background: rgba(248, 249, 251, 0.96);
+    border-radius: 22px; padding: 18px 20px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.35);
+    display: flex; flex-direction: column;
+  }
+  .chat-head { display:flex; align-items:center; justify-content:space-between;
+    font-size: 26px; font-weight: 800; margin-bottom: 12px; }
+  .chat-list { display: flex; flex-direction: column; gap: 9px; overflow: hidden; }
+  .chat-msg { font-size: 19px; line-height: 1.25; animation: slideIn .35s ease; }
+  .chat-msg .name { font-weight: 700; color: #2a64c4; margin-right: 6px; }
+  .chat-msg.sc { background:#ffd54a; border-radius:8px; padding:6px 9px; font-weight:600; }
+  @keyframes slideIn { from{opacity:0; transform:translateY(8px)} to{opacity:1; transform:none} }
+
+  .disconnected { position: absolute; top: 12px; left: 12px; color:#e23b2e;
+    font-size:14px; font-weight:700; display:none; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="disconnected" id="disc">● 서버 연결 끊김</div>
+
+  <div class="poll" id="poll">
+    <div class="poll-head">
+      <span class="q" id="q">WHO WILL WIN?</span>
+      <span class="headtotal" id="headTotal" hidden></span>
+      <span class="live"><span class="badge" id="badge">LIVE POLL</span></span>
+    </div>
+
+    <!-- 2개: 좌우 게이지 -->
+    <div id="duo">
+      <div class="pct-row">
+        <div class="pct-side left">
+          <span class="pct-num" id="pctL" style="color:#1e6fd6">0%</span>
+          <span class="pct-label" id="labL"></span>
+        </div>
+        <div class="pct-mid"><span id="cntL">0</span>/<span id="cntR">0</span></div>
+        <div class="pct-side right">
+          <span class="pct-num" id="pctR" style="color:#d6281e">0%</span>
+          <span class="pct-label" id="labR"></span>
+        </div>
+      </div>
+
+      <div class="bar">
+        <div class="seg left"  id="segL" style="width:50%;background:#1e6fd6">
+          <span id="nameL">TEAM BLUE</span><span class="sub" id="subL"></span>
+        </div>
+        <div class="seg right" id="segR" style="width:50%;background:#d6281e">
+          <span id="nameR">TEAM RED</span><span class="sub" id="subR"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3~5개: 가로막대 -->
+    <div id="multi" class="multi" style="display:none"></div>
+
+    <!-- 3~5개: 그림 모드(가로 배치, 각 우측에 득표수) -->
+    <div id="imgmode" class="imgmode" style="display:none"></div>
+
+    <div class="poll-foot" id="pollFoot"><b id="total">0</b> 투표</div>
+  </div>
+
+  <div class="chat" id="chatPanel" style="display:none">
+    <div class="chat-head">CHAT <span>💬</span></div>
+    <div class="chat-list" id="chatList"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const maxChat = 6;
+
+function renderPoll(p) {
+  $("q").textContent = p.question || "";
+  $("q").style.display = p.question ? "" : "none";
+  const totalStr = (p.total || 0).toLocaleString();
+  $("total").textContent = totalStr;
+  $("headTotal").innerHTML = totalStr + ' <small>투표</small>';
+
+  // 채팅창 표시 토글
+  $("chatPanel").style.display = p.showChat ? "" : "none";
+
+  // 집계 종료 시 배지 변경
+  $("badge").textContent = p.closed ? "투표 종료" : "LIVE POLL";
+  $("badge").classList.toggle("closed", !!p.closed);
+
+  const teams = p.teams || [];
+  // 그림 모드(best 템플릿)는 선택지 개수와 무관하게 우선 적용. 그 외엔 개수로 duo/multi 구분.
+  if (p.graphicMode === "image" && p.template !== "winner") renderImageMode(teams, p);
+  else if (teams.length <= 2) renderDuo(teams);
+  else renderMulti(teams);
+}
+
+function renderDuo(teams) {
+  $("duo").style.display = "";
+  $("multi").style.display = "none";
+  $("imgmode").style.display = "none";
+  stopImageLoop();
+  $("poll").classList.remove("compact", "imgpanel");
+  $("headTotal").hidden = true;
+  $("pollFoot").style.display = "";
+  const [L, R] = teams;
+  if (!L || !R) return;
+
+  $("pctL").textContent = L.pct + "%";
+  $("pctR").textContent = R.pct + "%";
+  $("pctL").style.color = L.color;
+  $("pctR").style.color = R.color;
+  $("cntL").textContent = L.count;
+  $("cntR").textContent = R.count;
+  $("nameL").textContent = L.name;
+  $("nameR").textContent = R.name;
+  $("subL").textContent = L.subName || "";
+  $("subR").textContent = R.subName || "";
+  $("segL").style.background = L.color;
+  $("segR").style.background = R.color;
+  // 0%일 때 바가 사라지지 않게 최소 폭 보정
+  const lw = Math.max(8, L.pct), rw = Math.max(8, R.pct);
+  const sum = lw + rw;
+  $("segL").style.width = (lw / sum * 100) + "%";
+  $("segR").style.width = (rw / sum * 100) + "%";
+}
+
+// 후보별 DOM/직전 득표수를 유지해서 in-place 업데이트 → 막대 늘어남 + 득표 강조 가능
+let multiState = [];
+
+function buildMultiRow(t) {
+  const row = document.createElement("div");
+  row.className = "mrow";
+
+  const mname = document.createElement("div");
+  mname.className = "mname";
+
+  const mtrack = document.createElement("div");
+  mtrack.className = "mtrack";
+  const mfill = document.createElement("div");
+  mfill.className = "mfill";
+  mtrack.appendChild(mfill);
+
+  const mpct = document.createElement("div");
+  mpct.className = "mpct";
+  const pctText = document.createTextNode("");
+  const mcnt = document.createElement("span");
+  mcnt.className = "mcnt";
+  mpct.appendChild(pctText);
+  mpct.appendChild(mcnt);
+
+  row.append(mname, mtrack, mpct);
+  return { name: t.name, count: -1, els: { row, mname, mtrack, mfill, mpct, pctText, mcnt } };
+}
+
+// 한 번 끝난 애니메이션을 다시 재생시키려면 클래스 제거 → 리플로우 → 재추가
+function retrigger(el, cls) {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+
+function renderMulti(teams) {
+  $("duo").style.display = "none";
+  $("multi").style.display = "";
+  $("imgmode").style.display = "none";
+  stopImageLoop();
+  $("poll").classList.remove("imgpanel");
+  $("poll").classList.add("compact");
+  $("headTotal").hidden = false;
+  $("pollFoot").style.display = "none";
+  const box = $("multi");
+
+  // 후보 개수/이름이 바뀌면 새로 구성(애니메이션 없이)
+  const sameStructure =
+    multiState.length === teams.length &&
+    teams.every((t, i) => multiState[i].name === t.name);
+
+  if (!sameStructure) {
+    box.innerHTML = "";
+    multiState = teams.map((t) => {
+      const st = buildMultiRow(t);
+      box.appendChild(st.els.row);
+      return st;
+    });
+  }
+
+  teams.forEach((t, i) => {
+    const st = multiState[i];
+    const e = st.els;
+
+    e.mname.style.color = t.color;
+    e.mname.textContent = t.name;
+    e.mfill.style.width = Math.max(2, t.pct) + "%";
+    e.mfill.style.background = t.color;
+    e.mfill.textContent = t.pct >= 12 ? t.pct + "%" : "";
+    e.mpct.style.color = t.color;
+    e.pctText.nodeValue = t.pct + "%";
+    e.mcnt.textContent = t.count + "표";
+
+    // 직전보다 득표가 늘었으면 강조: 막대 번쩍 + 숫자/퍼센트 팝
+    if (st.count >= 0 && t.count > st.count) {
+      retrigger(e.row, "flash");
+      retrigger(e.mpct, "pop");
+    }
+    st.count = t.count;
+  });
+}
+
+// ---------- 그림 모드 ----------
+// 칸별 DOM/프레임/직전 득표수 캐시. 단일 rAF 루프로 모든 칸 시퀀스를 반복 재생.
+let imageState = [];
+let imgFps = 24;
+let imgRAF = null;
+let imgLastTs = 0;
+
+// 후보 수에 따른 그림 높이(폭은 그림 비율대로 auto). w 는 그림 없는 placeholder 용.
+function artBox(n) {
+  if (n <= 2) return { w: 240, h: 240 };
+  if (n === 3) return { w: 210, h: 210 };
+  if (n === 4) return { w: 185, h: 185 };
+  return { w: 165, h: 170 };
+}
+
+function buildImageCell(t, n) {
+  const dir = (t.image && t.image.dir) || "";
+  const count = (t.image && t.image.count) || 0;
+  const box = artBox(n);
+
+  const cell = document.createElement("div");
+  cell.className = "icell";
+
+  const art = document.createElement("div");
+  art.className = "iart";
+  art.style.height = box.h + "px"; // 폭은 그림 비율대로(좌측 여백 방지)
+
+  // 시퀀스 프레임 preload (캐시 → src 교체 시 깜빡임 없음)
+  const frames = [];
+  let img = null;
+  if (dir && count > 0) {
+    for (let i = 1; i <= count; i++) {
+      const im = new Image();
+      im.src = dir + "frame_" + String(i).padStart(4, "0") + ".png";
+      frames.push(im);
+    }
+    img = document.createElement("img");
+    img.src = frames[0].src;
+    img.alt = t.name || "";
+    art.appendChild(img);
+  } else {
+    art.style.width = box.w + "px"; // 그림 없을 때만 고정 폭
+    art.classList.add("placeholder");
+    art.textContent = t.name || "?";
+  }
+
+  const nums = document.createElement("div");
+  nums.className = "inums";
+  const cntEl = document.createElement("div");
+  cntEl.className = "icount";
+  const pctEl = document.createElement("div");
+  pctEl.className = "ipct";
+  nums.append(cntEl, pctEl);
+
+  cell.append(art, nums);
+  return {
+    name: t.name, dir, count, frame: 0, prevCount: -1, frames,
+    els: { cell, art, img, cntEl, pctEl },
+  };
+}
+
+function imageLoop(ts) {
+  imgRAF = requestAnimationFrame(imageLoop);
+  if (!imageState.length) return;
+  const interval = 1000 / (imgFps || 24);
+  if (ts - imgLastTs < interval) return;
+  imgLastTs = ts;
+  for (const st of imageState) {
+    if (st.count > 1 && st.frames.length > 1 && st.els.img) {
+      st.frame = (st.frame + 1) % st.frames.length;
+      st.els.img.src = st.frames[st.frame].src;
+    }
+  }
+}
+function startImageLoop() { if (!imgRAF) { imgLastTs = 0; imgRAF = requestAnimationFrame(imageLoop); } }
+function stopImageLoop() { if (imgRAF) { cancelAnimationFrame(imgRAF); imgRAF = null; } }
+
+function renderImageMode(teams, p) {
+  $("duo").style.display = "none";
+  $("multi").style.display = "none";
+  $("imgmode").style.display = "";
+  $("poll").classList.remove("compact");
+  $("poll").classList.add("imgpanel");
+  $("headTotal").hidden = false;
+  $("pollFoot").style.display = "none";
+  imgFps = p.imageFps || 24;
+
+  const box = $("imgmode");
+  // 개수/이름/그림(dir,count)이 같으면 in-place, 아니면 새로 구성
+  const same =
+    imageState.length === teams.length &&
+    teams.every((t, i) => {
+      const s = imageState[i];
+      const dir = (t.image && t.image.dir) || "";
+      const cnt = (t.image && t.image.count) || 0;
+      return s.name === t.name && s.dir === dir && s.count === cnt;
+    });
+
+  if (!same) {
+    box.innerHTML = "";
+    imageState = teams.map((t) => buildImageCell(t, teams.length));
+    imageState.forEach((s) => box.appendChild(s.els.cell));
+  }
+  startImageLoop();
+
+  teams.forEach((t, i) => {
+    const st = imageState[i];
+    const e = st.els;
+    e.cntEl.textContent = (t.count || 0).toLocaleString();
+    e.cntEl.style.color = t.color;
+    e.pctEl.textContent = "(" + (t.pct || 0) + "%)";
+
+    // 득표 증가 시 "띠용": 그림 + 숫자
+    if (st.prevCount >= 0 && t.count > st.prevCount) {
+      retrigger(e.art, "boing");
+      retrigger(e.cntEl, "boing");
+    }
+    st.prevCount = t.count;
+  });
+}
+
+function addChat(m) {
+  const list = $("chatList");
+  const div = document.createElement("div");
+  div.className = "chat-msg" + (m.isSuperchat ? " sc" : "");
+  div.innerHTML = `<span class="name">${escapeHtml(m.author || "")}</span>${escapeHtml(m.text || "")}`;
+  list.appendChild(div);
+  while (list.children.length > maxChat) list.removeChild(list.firstChild);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// PGM 모드(?pgm=1): 송출(onair) 상태에 따라 그래픽 fade in/out. 그 외(PVW)는 항상 표시.
+const PGM = new URLSearchParams(location.search).get("pgm") === "1";
+if (PGM) $("stage").style.opacity = "0";
+function setOnAir(on) {
+  if (!PGM) return;
+  $("stage").style.opacity = on ? "1" : "0";
+}
+
+function connect() {
+  const ws = new WebSocket("ws://" + location.host);
+  ws.onopen = () => { $("disc").style.display = "none"; };
+  ws.onclose = () => { $("disc").style.display = "block"; setTimeout(connect, 1500); };
+  ws.onmessage = (ev) => {
+    const { type, data } = JSON.parse(ev.data);
+    if (type === "poll") renderPoll(data);
+    else if (type === "chat") addChat(data);
+    else if (type === "chatHistory") data.forEach(addChat);
+    else if (type === "onair") setOnAir(data);
+  };
+}
+connect();
+</script>
+</body>
+</html>

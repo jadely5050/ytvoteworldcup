@@ -1,0 +1,48 @@
+{
+  "videoId": "uPNX6DHAkMw",
+  "port": 3000,
+  "poll": {
+    "template": "best",
+    "mode": "keyword",
+    "oneVotePerUser": false,
+    "showChat": false,
+    "graphicMode": "image",
+    "imageFps": 24,
+    "question": "제일 활약할 선수는?",
+    "teams": [
+      {
+        "key": "A",
+        "name": "1. 메시",
+        "subName": "",
+        "color": "#1e6fd6",
+        "keywords": [
+          "1",
+          "메시",
+          "#1",
+          "이만희"
+        ],
+        "image": {
+          "dir": "/assets/1781761196972-A/",
+          "count": 1
+        }
+      },
+      {
+        "key": "B",
+        "name": "2. 호날두",
+        "subName": "",
+        "color": "#d6281e",
+        "keywords": [
+          "2",
+          "호날두",
+          "#2",
+          "김정은",
+          "박정희"
+        ],
+        "image": {
+          "dir": "/assets/1781761248672-B/",
+          "count": 1
+        }
+      }
+    ]
+  }
+}

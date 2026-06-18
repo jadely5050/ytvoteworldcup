@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ytworldcup — 설정 (admin)</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    font-family: "Pretendard", "Noto Sans KR", -apple-system, system-ui, sans-serif;
+    background: #0f1115; color: #e7e9ee; height: 100vh; overflow: hidden;
+  }
+  /* 2단: 좌측 폼 / 우측 모니터 */
+  .app { display: flex; height: 100vh; }
+  .left { width: 500px; flex: none; overflow-y: auto; padding: 24px 24px 40px; border-right: 1px solid #242a36; }
+  .right { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 18px; gap: 12px; }
+
+  .monitors { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+  .mon { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+  .mon .montitle { flex: none; font-size: 13px; font-weight: 800; letter-spacing: .3px; display: flex; align-items: center; gap: 8px; }
+  .mon .montitle .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .mon.pgm .montitle { color: #f87171; } .mon.pgm .dot { background: #f87171; }
+  .mon.pvw .montitle { color: #4ade80; } .mon.pvw .dot { background: #4ade80; }
+  /* 화면 박스를 16:9 로 고정(높이 기준), 가로 가운데 정렬 */
+  .screenwrap { flex: 1; min-height: 0; display: flex; justify-content: center; }
+  .screen {
+    position: relative; height: 100%; aspect-ratio: 16 / 9; max-width: 100%;
+    background: #0a0c10 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' fill='%230a0c10'/%3E%3Cpath d='M0 20h40M20 0v40' stroke='%23161a22' stroke-width='1'/%3E%3C/svg%3E");
+    border: 1px solid #242a36; border-radius: 8px; overflow: hidden;
+  }
+  .screen iframe { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px; border: 0; transform-origin: top left; }
+
+  .airbar { display: flex; justify-content: flex-end; align-items: center; gap: 14px; }
+  .onair {
+    min-width: 270px;
+    border: none; border-radius: 11px; padding: 16px 34px; font-size: 18px; font-weight: 900;
+    cursor: pointer; color: #fff; letter-spacing: .5px; transition: background .15s;
+    text-align: center;
+  }
+  .onair.off { background: #16a34a; } .onair.off:hover { background: #15873d; }
+  .onair.on  { background: #dc2626; animation: airpulse 1.4s infinite; }
+  .onair.on:hover { background: #b91c1c; }
+  @keyframes airpulse { 0%,100%{ box-shadow: 0 0 0 0 rgba(220,38,38,.5);} 50%{ box-shadow: 0 0 0 10px rgba(220,38,38,0);} }
+  .tally {
+    border: none; border-radius: 11px; padding: 16px 26px; font-size: 17px; font-weight: 800;
+    cursor: pointer; color: #fff; transition: background .15s;
+  }
+  .tally.on  { background: #2563eb; } .tally.on:hover  { background: #1d4fd7; }  /* 집계 중 → 종료 가능 */
+  .tally.off { background: #6b7280; } .tally.off:hover { background: #565d68; }  /* 종료됨 → 시작 가능 */
+
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #9aa0ac; font-size: 14px; margin-bottom: 22px; }
+  .sub a { color: #5aa9ff; }
+
+  .card {
+    background: #161922; border: 1px solid #242a36; border-radius: 12px;
+    padding: 20px 22px; margin-bottom: 18px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 16px; color: #c8cdd8; font-weight: 700; }
+
+  .field { margin-bottom: 16px; }
+  .field:last-child { margin-bottom: 0; }
+  label { display: block; font-size: 13px; color: #aab0bc; margin: 0 0 7px; font-weight: 600; }
+  label .tip { color: #6b7180; font-weight: 400; margin-left: 6px; font-size: 12px; }
+
+  input[type=text], input[type=number], select, textarea {
+    width: 100%; background: #0f1218; color: #e7e9ee;
+    border: 1px solid #2a2f3a; border-radius: 8px; padding: 11px 13px;
+    font-size: 14px; font-family: inherit;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: #5aa9ff; }
+  textarea { resize: vertical; min-height: 58px; line-height: 1.5; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+
+  .inline { display: flex; align-items: center; gap: 10px; }
+  .inline input[type=color] {
+    width: 44px; height: 38px; padding: 2px; border: 1px solid #2a2f3a;
+    border-radius: 8px; background: #0f1218; cursor: pointer; flex: none;
+  }
+  .switch { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #c8cdd8; }
+  .switch input { width: 18px; height: 18px; }
+
+  /* 템플릿 탭 */
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab {
+    background: #1b1f29; color: #aab0bc; border: 1px solid #2a2f3a;
+    border-radius: 9px; padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer;
+  }
+  .tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+  /* 승리팀 2분할 */
+  .teams { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .team {
+    border: 1px solid #2a2f3a; border-radius: 10px; padding: 16px;
+    border-top: 4px solid var(--accent, #555);
+  }
+  .team .ttitle { font-size: 13px; font-weight: 700; color: #aab0bc; margin-bottom: 14px; }
+
+  /* 멀티 선택지 (가로) */
+  .choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .choice {
+    position: relative; border: 1px solid #2a2f3a; border-radius: 10px; padding: 14px;
+    border-top: 4px solid var(--accent, #555);
+  }
+  .choice .chead { font-size: 12px; font-weight: 700; color: #8a909c; margin-bottom: 12px; }
+  .choice .rm {
+    position: absolute; top: 8px; right: 8px; width: 26px; height: 26px;
+    background: #2a2f3a; border: none; border-radius: 7px; color: #cfd4de;
+    font-size: 15px; cursor: pointer; padding: 0; line-height: 1;
+  }
+  .choice .rm:hover { background: #b1342a; color: #fff; }
+  .choice input[type=file] { font-size: 12px; color: #aab0bc; }
+  .choice input[type=file]::file-selector-button {
+    background: #2a2f3a; color: #cfd4de; border: none; border-radius: 7px;
+    padding: 7px 11px; margin-right: 9px; font-size: 12px; font-weight: 700; cursor: pointer;
+  }
+  .choice input[type=file]::file-selector-button:hover { background: #353b48; }
+  .c_imgprev { display: flex; align-items: center; gap: 10px; margin-top: 9px; min-height: 20px; font-size: 12px; color: #8a909c; }
+  .c_imgprev img {
+    width: 48px; height: 48px; object-fit: contain; border-radius: 6px;
+    background: #0a0c10 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Crect width='16' height='16' fill='%230a0c10'/%3E%3Cpath d='M0 8h16M8 0v16' stroke='%23222' stroke-width='1'/%3E%3C/svg%3E");
+    border: 1px solid #2a2f3a; flex: none;
+  }
+  .c_imgprev b { color: #8fd0ff; }
+  .addBtn {
+    margin-top: 14px; background: #1b1f29; color: #8fd0ff; border: 1px dashed #3a4150;
+    border-radius: 9px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; width: 100%;
+  }
+  .addBtn:hover { background: #20252f; }
+  .addBtn:disabled { opacity: .4; cursor: default; }
+
+  .row { display: flex; gap: 12px; align-items: center; margin-top: 4px; }
+  button.primary {
+    background: #2563eb; color: #fff; border: none; border-radius: 9px;
+    padding: 13px 24px; font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  button.primary:hover { background: #1d4fd7; }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  button.ghost {
+    background: #2a2f3a; color: #fff; border: none; border-radius: 9px;
+    padding: 13px 24px; font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  button.ghost:hover { background: #353b48; }
+  button.danger {
+    background: #7a2d2d; color: #ffd9d9; border: none; border-radius: 9px;
+    padding: 13px 20px; font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  button.danger:hover { background: #9b3636; color: #fff; }
+  #msg { font-size: 14px; font-weight: 600; }
+  #msg.ok { color: #4ade80; }
+  #msg.err { color: #f87171; }
+  .vidnote { font-size: 12px; color: #6b7180; margin-top: 6px; }
+  .vidnote b { color: #8fd0ff; }
+</style>
+</head>
+<body>
+<div class="app">
+<div class="left">
+  <h1>⚙️ ytworldcup 설정</h1>
+  <div class="sub">
+    항목을 채우고 <b>저장 &amp; 재시작</b>을 누르면 바로 반영됩니다.
+    &nbsp;·&nbsp; <a href="/overlay.html" target="_blank">오버레이 열기 ↗</a>
+  </div>
+
+  <div class="card">
+    <h2>라이브 / 기본</h2>
+    <div class="field">
+      <label>유튜브 라이브 주소 또는 영상 ID <span class="tip">URL 전체를 붙여넣어도 ID만 자동 추출</span></label>
+      <input type="text" id="videoUrl" placeholder="https://www.youtube.com/watch?v=XXXXXXXXXXX 또는 영상 ID" />
+      <div class="vidnote">추출된 videoId: <b id="vidPreview">—</b></div>
+    </div>
+    <div class="grid2">
+      <div class="field">
+        <label>포트</label>
+        <input type="number" id="port" value="3000" min="1" max="65535" />
+      </div>
+      <div class="field">
+        <label>투표 모드</label>
+        <select id="mode">
+          <option value="keyword">keyword (채팅 키워드만 집계)</option>
+          <option value="auto">auto (네이티브 설문 있으면 우선, 없으면 키워드)</option>
+          <option value="native">native (유튜브 네이티브 설문만)</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label class="switch"><input type="checkbox" id="onevote" /> 한 사람당 1표 (체크 해제 시 중복 투표 허용)</label>
+    </div>
+    <div class="field">
+      <label class="switch"><input type="checkbox" id="showChat" /> 우측 채팅창 표시</label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>투표 템플릿</h2>
+    <div class="tabs">
+      <button class="tab" id="tabBest" data-tpl="best">제일 ??한 ??은?</button>
+      <button class="tab" id="tabWinner" data-tpl="winner">승리팀 맞추기</button>
+    </div>
+
+    <!-- 템플릿: 제일 ??한 ??은? (멀티 선택지) -->
+    <div id="tplBest">
+      <div class="field">
+        <label>질문 <span class="tip">(비워두면 유튜브 설문 질문이 표출됩니다)</span></label>
+        <input type="text" id="q_best" placeholder="이번 경기에서 제일 활약할 선수는?" />
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>그래픽 모드</label>
+          <select id="graphicMode">
+            <option value="bar">막대 그래프</option>
+            <option value="image">그림 (스틸 / 시퀀스)</option>
+          </select>
+        </div>
+        <div class="field" id="fpsField" style="display:none">
+          <label>시퀀스 속도 (fps) <span class="tip">여러 장 업로드 시</span></label>
+          <input type="number" id="imageFps" value="24" min="1" max="60" />
+        </div>
+      </div>
+      <div class="choices" id="choices"></div>
+      <button class="addBtn" id="addChoice">+ 선택지 추가 <span style="opacity:.7">(최대 5개)</span></button>
+    </div>
+
+    <!-- 템플릿: 승리팀 맞추기 (2분할) -->
+    <div id="tplWinner" style="display:none">
+      <div class="field">
+        <label>질문 <span class="tip">(비워두면 유튜브 설문 질문이 표출됩니다)</span></label>
+        <input type="text" id="q_winner" placeholder="어느 팀이 이길까요?" />
+      </div>
+      <div class="teams">
+        <div class="team" id="teamCardA">
+          <div class="ttitle">왼쪽 (A)</div>
+          <div class="field"><label>표시 이름</label><input type="text" id="A_name" placeholder="TEAM BLUE" /></div>
+          <div class="field"><label>부제 (작은 글씨)</label><input type="text" id="A_sub" placeholder="울산 현대 FC" /></div>
+          <div class="field"><label>색상</label><div class="inline"><input type="color" id="A_color" value="#1e6fd6" /><input type="text" id="A_colorHex" /></div></div>
+          <div class="field"><label>집계 키워드 <span class="tip">쉼표로 구분</span></label><textarea id="A_kw" placeholder="a, 1, 대한민국"></textarea></div>
+        </div>
+        <div class="team" id="teamCardB">
+          <div class="ttitle">오른쪽 (B)</div>
+          <div class="field"><label>표시 이름</label><input type="text" id="B_name" placeholder="TEAM RED" /></div>
+          <div class="field"><label>부제 (작은 글씨)</label><input type="text" id="B_sub" placeholder="FC 서울" /></div>
+          <div class="field"><label>색상</label><div class="inline"><input type="color" id="B_color" value="#d6281e" /><input type="text" id="B_colorHex" /></div></div>
+          <div class="field"><label>집계 키워드 <span class="tip">쉼표로 구분</span></label><textarea id="B_kw" placeholder="b, 2, 멕시코"></textarea></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <button class="primary" id="save">💾 설정 저장</button>
+    <button class="danger" id="reset">♻ 통계 리셋</button>
+    <button class="ghost" id="reload">↻ 다시 불러오기</button>
+  </div>
+  <div class="row"><span id="msg"></span></div>
+</div><!-- /left -->
+
+<div class="right">
+  <div class="monitors">
+    <div class="mon pgm">
+      <div class="montitle"><span class="dot"></span> PGM (실제 송출 · layout.html)</div>
+      <div class="screenwrap"><div class="screen"><iframe id="pgmFrame" src="/layout.html" scrolling="no"></iframe></div></div>
+    </div>
+    <div class="mon pvw">
+      <div class="montitle"><span class="dot"></span> PVW (미리보기 · overlay.html)</div>
+      <div class="screenwrap"><div class="screen"><iframe id="pvwFrame" src="/overlay.html" scrolling="no"></iframe></div></div>
+    </div>
+  </div>
+  <div class="airbar">
+    <span id="airmsg" style="font-size:13px;color:#9aa0ac"></span>
+    <button id="tally" class="tally on">■ 집계 종료</button>
+    <button id="onair" class="onair off">● 송출 시작</button>
+  </div>
+</div><!-- /right -->
+</div><!-- /app -->
+
+<script>
+const $ = (id) => document.getElementById(id);
+const msg = $("msg"), saveBtn = $("save"), reloadBtn = $("reload");
+const PALETTE = ["#1e6fd6", "#d6281e", "#01b22d", "#f59e0b", "#7c3aed"];
+const MAX_CHOICES = 5;
+let template = "best";
+let loadedConfig = null; // 현재 적용(실행) 중인 config — 통계 지속 판단용
+
+function setMsg(text, kind) { msg.textContent = text; msg.className = kind || ""; }
+function parseKw(s) { return String(s || "").split(",").map((x) => x.trim()).filter(Boolean); }
+
+// ---------- videoId ----------
+function extractVideoId(input) {
+  const s = String(input || "").trim();
+  if (!s) return "";
+  if (/^[\w-]{11}$/.test(s)) return s;
+  const pats = [/[?&]v=([\w-]{11})/, /youtu\.be\/([\w-]{11})/, /\/live\/([\w-]{11})/, /\/embed\/([\w-]{11})/, /\/shorts\/([\w-]{11})/];
+  for (const re of pats) { const m = s.match(re); if (m) return m[1]; }
+  const tail = s.split(/[/?#]/).filter(Boolean).pop();
+  if (tail && /^[\w-]{11}$/.test(tail)) return tail;
+  return s;
+}
+function updateVidPreview() { $("vidPreview").textContent = extractVideoId($("videoUrl").value) || "—"; }
+$("videoUrl").addEventListener("input", updateVidPreview);
+
+// ---------- color <-> hex ----------
+function bindColor(picker, hex, card) {
+  const sync = (v) => { picker.value = v; hex.value = v; if (card) card.style.setProperty("--accent", v); };
+  picker.addEventListener("input", () => sync(picker.value));
+  hex.addEventListener("input", () => { if (/^#[0-9a-fA-F]{6}$/.test(hex.value)) sync(hex.value); });
+  return sync;
+}
+const syncA = bindColor($("A_color"), $("A_colorHex"), $("teamCardA"));
+const syncB = bindColor($("B_color"), $("B_colorHex"), $("teamCardB"));
+
+// ---------- 템플릿 탭 ----------
+function setTemplate(tpl) {
+  template = tpl;
+  $("tabBest").classList.toggle("active", tpl === "best");
+  $("tabWinner").classList.toggle("active", tpl === "winner");
+  $("tplBest").style.display = tpl === "best" ? "" : "none";
+  $("tplWinner").style.display = tpl === "winner" ? "" : "none";
+}
+$("tabBest").addEventListener("click", () => setTemplate("best"));
+$("tabWinner").addEventListener("click", () => setTemplate("winner"));
+
+// ---------- 멀티 선택지 ----------
+function makeChoice(data, idx) {
+  const c = data || {};
+  const color = c.color || PALETTE[idx % PALETTE.length];
+  const div = document.createElement("div");
+  div.className = "choice";
+  div.style.setProperty("--accent", color);
+  div.innerHTML =
+    `<button class="rm" title="삭제">✕</button>` +
+    `<div class="chead">선택지 ${idx + 1}</div>` +
+    `<div class="field"><label>표시 이름</label><input type="text" class="c_name" placeholder="예: 손흥민" /></div>` +
+    `<div class="field"><label>색상</label><div class="inline"><input type="color" class="c_color" /><input type="text" class="c_hex" /></div></div>` +
+    `<div class="field"><label>집계 키워드 <span class="tip">쉼표</span></label><textarea class="c_kw" placeholder="예: 1, 손흥민, 손"></textarea></div>` +
+    `<div class="field c_imgfield"><label>그림 <span class="tip">PNG · 1장=스틸, 여러 장=시퀀스</span></label>` +
+      `<input type="file" class="c_img" accept="image/png" multiple />` +
+      `<div class="c_imgprev"></div></div>`;
+  div.querySelector(".c_name").value = c.name || "";
+  div.querySelector(".c_kw").value = (c.keywords || []).join(", ");
+  const picker = div.querySelector(".c_color"), hex = div.querySelector(".c_hex");
+  const sync = (v) => { picker.value = v; hex.value = v; div.style.setProperty("--accent", v); };
+  sync(color);
+  picker.addEventListener("input", () => sync(picker.value));
+  hex.addEventListener("input", () => { if (/^#[0-9a-fA-F]{6}$/.test(hex.value)) sync(hex.value); });
+  div.querySelector(".rm").addEventListener("click", () => { div.remove(); renumberChoices(); });
+
+  // 그림 업로드: 카드에 _image({dir,count}) 저장 + 미리보기
+  div._image = c.image || null;
+  setImgPrev(div);
+  div.querySelector(".c_img").addEventListener("change", (e) => uploadChoiceImage(div, e.target));
+
+  return div;
+}
+
+// 카드의 _image 상태로 미리보기 갱신 (msg 가 있으면 상태 메시지 표시)
+function setImgPrev(div, msg) {
+  const box = div.querySelector(".c_imgprev");
+  if (!box) return;
+  if (msg) { box.innerHTML = `<span>${msg}</span>`; return; }
+  const im = div._image;
+  if (im && im.dir && im.count) {
+    const kind = im.count > 1 ? `시퀀스 · <b>${im.count}프레임</b>` : "스틸 이미지";
+    box.innerHTML = `<img src="${im.dir}frame_0001.png" alt="" /><span>${kind}</span>`;
+  } else {
+    box.innerHTML = `<span style="opacity:.6">업로드된 그림 없음</span>`;
+  }
+}
+
+async function uploadChoiceImage(div, input) {
+  const files = [...(input.files || [])];
+  if (!files.length) return;
+  const fd = new FormData();
+  files.forEach((f) => fd.append("frames", f));
+  const idx = [...$("choices").children].indexOf(div);
+  fd.append("key", String.fromCharCode(65 + (idx < 0 ? 0 : idx)));
+  if (div._image && div._image.dir) fd.append("prevDir", div._image.dir);
+
+  setImgPrev(div, "업로드 중…");
+  try {
+    const r = await fetch("/admin/upload", { method: "POST", body: fd });
+    const data = await r.json();
+    if (data.ok) {
+      div._image = { dir: data.dir, count: data.count };
+      setImgPrev(div);
+      setMsg(`✔ 그림 ${data.count}장 업로드됨 — 저장 후 반영됩니다.`, "ok");
+    } else {
+      setImgPrev(div);
+      setMsg("✖ 업로드 실패: " + (data.error || ""), "err");
+    }
+  } catch (e) {
+    setImgPrev(div);
+    setMsg("✖ 업로드 실패: " + e.message, "err");
+  } finally {
+    input.value = ""; // 같은 파일 재선택 가능하도록 초기화
+  }
+}
+
+// 그래픽 모드에 따라 fps/업로드 UI 표시 토글
+function applyGraphicModeUI() {
+  const isImg = $("graphicMode").value === "image";
+  $("fpsField").style.display = isImg ? "" : "none";
+  document.querySelectorAll(".c_imgfield").forEach((el) => { el.style.display = isImg ? "" : "none"; });
+}
+$("graphicMode").addEventListener("change", applyGraphicModeUI);
+function renumberChoices() {
+  const rows = [...$("choices").children];
+  rows.forEach((r, i) => { r.querySelector(".chead").textContent = "선택지 " + (i + 1); });
+  $("addChoice").disabled = rows.length >= MAX_CHOICES;
+  // 최소 2개 유지 → 삭제 버튼 잠금
+  rows.forEach((r) => { r.querySelector(".rm").disabled = rows.length <= 2; r.querySelector(".rm").style.opacity = rows.length <= 2 ? .3 : 1; });
+}
+function addChoice(data) {
+  if ($("choices").children.length >= MAX_CHOICES) return;
+  $("choices").appendChild(makeChoice(data, $("choices").children.length));
+  renumberChoices();
+  applyGraphicModeUI();
+}
+function setChoices(list) {
+  $("choices").innerHTML = "";
+  const arr = (list && list.length) ? list.slice(0, MAX_CHOICES) : [{}, {}, {}];
+  arr.forEach((c, i) => $("choices").appendChild(makeChoice(c, i)));
+  renumberChoices();
+  applyGraphicModeUI();
+}
+$("addChoice").addEventListener("click", () => addChoice());
+
+// ---------- load / build ----------
+function fill(cfg) {
+  const poll = cfg.poll || {};
+  $("videoUrl").value = cfg.videoId || "";
+  updateVidPreview();
+  $("port").value = cfg.port || 3000;
+  $("mode").value = poll.mode || "keyword";
+  $("onevote").checked = !!poll.oneVotePerUser;
+  $("showChat").checked = !!poll.showChat;
+  const q = poll.question || poll.questionKr || "";
+  $("q_best").value = q;
+  $("q_winner").value = q;
+  $("graphicMode").value = poll.graphicMode === "image" ? "image" : "bar";
+  $("imageFps").value = poll.imageFps || 24;
+
+  const teams = poll.teams || [];
+  const tpl = poll.template || (teams.length === 2 ? "winner" : "best");
+
+  // winner 에디터
+  const a = teams[0] || {}, b = teams[1] || {};
+  $("A_name").value = a.name || ""; $("A_sub").value = a.subName || "";
+  syncA(a.color || "#1e6fd6"); $("A_kw").value = (a.keywords || []).join(", ");
+  $("B_name").value = b.name || ""; $("B_sub").value = b.subName || "";
+  syncB(b.color || "#d6281e"); $("B_kw").value = (b.keywords || []).join(", ");
+  fill._aKey = a.key || "A"; fill._bKey = b.key || "B";
+
+  // best 에디터
+  setChoices(tpl === "best" ? teams : null);
+
+  setTemplate(tpl);
+}
+
+function buildConfig() {
+  const base = {
+    videoId: extractVideoId($("videoUrl").value),
+    port: parseInt($("port").value, 10) || 3000,
+    poll: {
+      template,
+      mode: $("mode").value,
+      oneVotePerUser: $("onevote").checked,
+      showChat: $("showChat").checked,
+      graphicMode: $("graphicMode").value === "image" ? "image" : "bar",
+      imageFps: parseInt($("imageFps").value, 10) || 24,
+      question: (template === "winner" ? $("q_winner") : $("q_best")).value.trim(),
+      teams: [],
+    },
+  };
+  if (template === "winner") {
+    base.poll.teams = [
+      { key: "A", name: $("A_name").value.trim(), subName: $("A_sub").value.trim(), color: $("A_color").value, keywords: parseKw($("A_kw").value) },
+      { key: "B", name: $("B_name").value.trim(), subName: $("B_sub").value.trim(), color: $("B_color").value, keywords: parseKw($("B_kw").value) },
+    ];
+  } else {
+    base.poll.teams = [...$("choices").children].map((r, i) => ({
+      key: String.fromCharCode(65 + i),
+      name: r.querySelector(".c_name").value.trim(),
+      subName: "",
+      color: r.querySelector(".c_color").value,
+      keywords: parseKw(r.querySelector(".c_kw").value),
+      image: r._image || null,
+    }));
+  }
+  return base;
+}
+
+async function load() {
+  setMsg("불러오는 중…", "");
+  try {
+    const r = await fetch("/admin/config");
+    const cfg = await r.json();
+    loadedConfig = cfg;
+    fill(cfg);
+    setMsg("불러왔습니다.", "ok");
+  } catch (e) {
+    setMsg("불러오기 실패: " + e.message, "err");
+  }
+}
+
+// 새 설정이 현재 적용 중인 투표와 "유사"한지 (통계 지속 여부 판단)
+// 보기 개수가 달라도(예: 4개→5개) 겹치는 보기가 과반이면 유사로 본다.
+function isSimilarPoll(newTeams) {
+  const oldTeams = (loadedConfig && loadedConfig.poll && loadedConfig.poll.teams) || [];
+  if (!oldTeams.length || !newTeams.length) return false;
+  const usedOld = new Set();
+  let match = 0;
+  for (const n of newTeams) {
+    const nName = (n.name || "").trim().toLowerCase();
+    const nKw = new Set((n.keywords || []).map((x) => x.toLowerCase()));
+    for (let i = 0; i < oldTeams.length; i++) {
+      if (usedOld.has(i)) continue;
+      const o = oldTeams[i];
+      const oName = (o.name || "").trim().toLowerCase();
+      const sameName = nName && oName && nName === oName;
+      const shareKw = (o.keywords || []).some((x) => nKw.has(x.toLowerCase()));
+      if (sameName || shareKw) { match++; usedOld.add(i); break; }
+    }
+  }
+  return match >= Math.ceil(Math.max(oldTeams.length, newTeams.length) / 2);
+}
+
+async function save() {
+  const cfg = buildConfig();
+
+  // 유사 항목이면 통계 지속 여부 확인
+  let keepStats = false;
+  if (isSimilarPoll(cfg.poll.teams)) {
+    keepStats = window.confirm(
+      "기존 투표와 유사한 항목을 사용 중입니다.\n통계를 지속할까요?\n\n[확인] 통계 지속    [취소] 통계 리셋"
+    );
+  }
+
+  saveBtn.disabled = true;
+  setMsg("설정 저장 중…", "");
+  try {
+    const r = await fetch("/admin/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: JSON.stringify(cfg), keepStats }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      setMsg("✔ " + data.message + (data.videoId ? " (videoId: " + data.videoId + ")" : ""), "ok");
+      $("videoUrl").value = data.videoId || cfg.videoId; updateVidPreview();
+      loadedConfig = cfg; // 이후 저장 비교 기준 갱신
+    } else {
+      setMsg("✖ " + (data.error || "저장 실패"), "err");
+    }
+  } catch (e) {
+    setMsg("요청 실패: " + e.message, "err");
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
+async function resetStats() {
+  const resetBtn = $("reset");
+  resetBtn.disabled = true;
+  setMsg("통계 리셋 중…", "");
+  try {
+    const r = await fetch("/admin/reset", { method: "POST" });
+    const data = await r.json();
+    setMsg(data.ok ? "✔ " + data.message : "✖ 리셋 실패", data.ok ? "ok" : "err");
+    refreshTally(); // 리셋 시 서버가 집계 재개 → 버튼 동기화
+  } catch (e) {
+    setMsg("요청 실패: " + e.message, "err");
+  } finally {
+    resetBtn.disabled = false;
+  }
+}
+$("reset").addEventListener("click", resetStats);
+
+saveBtn.addEventListener("click", save);
+reloadBtn.addEventListener("click", load);
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); }
+});
+
+// ---------- PGM/PVW 모니터 스케일 (1920x1080 → 컨테이너 폭) ----------
+function scaleScreens() {
+  document.querySelectorAll(".screen").forEach((s) => {
+    const f = s.querySelector("iframe");
+    if (!f) return;
+    const k = Math.min(s.clientWidth / 1920, s.clientHeight / 1080);
+    f.style.transform = "scale(" + k + ")";
+    f.style.left = ((s.clientWidth - 1920 * k) / 2) + "px";
+    f.style.top = ((s.clientHeight - 1080 * k) / 2) + "px";
+  });
+}
+const ro = new ResizeObserver(scaleScreens);
+document.querySelectorAll(".screen").forEach((s) => ro.observe(s));
+window.addEventListener("resize", scaleScreens);
+scaleScreens();
+
+// ---------- 송출 (on-air) ----------
+let onair = false;
+function setOnairUI(on) {
+  onair = on;
+  const b = $("onair");
+  b.classList.toggle("on", on);
+  b.classList.toggle("off", !on);
+  b.textContent = on ? "● 송출 중 (클릭 시 종료)" : "● 송출 시작";
+  $("airmsg").textContent = on ? "그래픽이 PGM(layout.html)에 표출 중입니다." : "PGM 그래픽이 내려가 있습니다.";
+}
+async function refreshOnair() {
+  try { const r = await fetch("/admin/onair"); setOnairUI((await r.json()).on); } catch {}
+}
+$("onair").addEventListener("click", async () => {
+  $("onair").disabled = true;
+  try {
+    const r = await fetch("/admin/onair", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ on: !onair }),
+    });
+    setOnairUI((await r.json()).on);
+  } catch (e) { $("airmsg").textContent = "송출 토글 실패: " + e.message; }
+  finally { $("onair").disabled = false; }
+});
+
+// ---------- 집계 (tally) ----------
+let tallying = true;
+function setTallyUI(on) {
+  tallying = on;
+  const b = $("tally");
+  b.classList.toggle("on", on);
+  b.classList.toggle("off", !on);
+  b.textContent = on ? "■ 집계 종료" : "▶ 집계 시작";
+}
+async function refreshTally() {
+  try { const r = await fetch("/admin/tally"); setTallyUI((await r.json()).on); } catch {}
+}
+$("tally").addEventListener("click", async () => {
+  $("tally").disabled = true;
+  try {
+    const r = await fetch("/admin/tally", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ on: !tallying }),
+    });
+    setTallyUI((await r.json()).on);
+  } catch (e) { $("airmsg").textContent = "집계 토글 실패: " + e.message; }
+  finally { $("tally").disabled = false; }
+});
+
+load();
+refreshOnair();
+refreshTally();
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "ytworldcup",
+  "version": "0.1.0",
+  "private": true,
+  "description": "YouTube 라이브 채팅 투표 → vMix HTML 오버레이 로컬 서버",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "postinstall": "node scripts/patch-masterchat.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "masterchat": "^1.1.0",
+    "multer": "^2.2.0",
+    "ws": "^8.18.0"
+  }
+}
