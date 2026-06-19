@@ -145,9 +145,10 @@
     flex: none; display: flex; align-items: center; justify-content: center;
     transform-origin: center center;
   }
-  /* 그림 박스는 높이만 고정하고 폭은 그림에 맞춤(좌측 여백 제거) */
+  /* 박스는 고정 크기(프레임마다 폭이 달라 그림이 들썩이는 것 방지),
+     비율은 첫 프레임에 맞춰 좌우 여백 최소화 */
   .iart img {
-    display: block; height: 100%; width: auto;
+    display: block; width: 100%; height: 100%; object-fit: contain;
     filter: drop-shadow(0 6px 14px rgba(0,0,0,.28));
   }
   .iart.placeholder {
@@ -403,7 +404,8 @@ function buildImageCell(t, n) {
 
   const art = document.createElement("div");
   art.className = "iart";
-  art.style.height = box.h + "px"; // 폭은 그림 비율대로(좌측 여백 방지)
+  art.style.height = box.h + "px";
+  art.style.width = box.h + "px"; // 기본 정사각(고정) → 프레임 바뀌어도 안 들썩임
 
   // 시퀀스 프레임 preload (캐시 → src 교체 시 깜빡임 없음)
   const frames = [];
@@ -414,6 +416,12 @@ function buildImageCell(t, n) {
       im.src = dir + "frame_" + String(i).padStart(4, "0") + ".png";
       frames.push(im);
     }
+    // 첫 프레임 비율로 박스 폭을 한 번만 확정(좌우 여백 최소화, 이후 고정)
+    const fitBox = () => {
+      const w = frames[0].naturalWidth, h = frames[0].naturalHeight;
+      if (w && h) art.style.width = Math.round(box.h * (w / h)) + "px";
+    };
+    if (frames[0].complete) fitBox(); else frames[0].onload = fitBox;
     img = document.createElement("img");
     img.src = frames[0].src;
     img.alt = t.name || "";
