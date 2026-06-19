@@ -1,9 +1,6 @@
 # dependencies
 node_modules/
 
-# 런타임 업로드 이미지 (admin 에서 업로드되는 그림/시퀀스)
-public/assets/
-
 # 테스트 산출물
 .testframes/
 
