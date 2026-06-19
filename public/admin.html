@@ -154,6 +154,34 @@
   #msg.err { color: #f87171; }
   .vidnote { font-size: 12px; color: #6b7180; margin-top: 6px; }
   .vidnote b { color: #8fd0ff; }
+
+  /* 상단 새로만들기 / 불러오기 */
+  .topbar { display: flex; gap: 8px; margin-bottom: 16px; }
+  .topbar button {
+    flex: 1; background: #1b1f29; color: #cfd4de; border: 1px solid #2a2f3a;
+    border-radius: 9px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer;
+  }
+  .topbar button:hover { background: #20252f; border-color: #3a4150; }
+
+  /* 불러오기 모달 */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex;
+    align-items: center; justify-content: center; z-index: 50; }
+  .modal { width: 460px; max-width: 92vw; max-height: 80vh; display: flex; flex-direction: column;
+    background: #161922; border: 1px solid #2a2f3a; border-radius: 12px; overflow: hidden; }
+  .modal-head { display: flex; align-items: center; justify-content: space-between;
+    padding: 15px 18px; border-bottom: 1px solid #242a36; font-size: 16px; font-weight: 800; }
+  .modal-head button { background: none; border: none; color: #9aa0ac; font-size: 18px; cursor: pointer; }
+  .modal-list { overflow-y: auto; padding: 10px; }
+  .preset { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 9px;
+    cursor: pointer; border: 1px solid transparent; }
+  .preset:hover { background: #1b1f29; border-color: #2a2f3a; }
+  .preset .pn { flex: 1; min-width: 0; }
+  .preset .pn b { display: block; font-size: 14px; color: #e7e9ee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .preset .pn span { font-size: 12px; color: #6b7180; }
+  .preset .del { background: #2a2f3a; color: #cfd4de; border: none; border-radius: 7px;
+    padding: 6px 10px; font-size: 12px; cursor: pointer; flex: none; }
+  .preset .del:hover { background: #b1342a; color: #fff; }
+  .modal-empty { padding: 30px; text-align: center; color: #6b7180; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -163,10 +191,20 @@
   <div class="sub">
     항목을 채우고 <b>저장 &amp; 재시작</b>을 누르면 바로 반영됩니다.
     &nbsp;·&nbsp; <a href="/overlay.html" target="_blank">오버레이 열기 ↗</a>
+    &nbsp;·&nbsp; <a href="/test.html" target="_blank">투표 테스트 🧪</a>
+  </div>
+
+  <div class="topbar">
+    <button id="btnNew">+ 새로 만들기</button>
+    <button id="btnLoad">📂 불러오기</button>
   </div>
 
   <div class="card">
     <h2>라이브 / 기본</h2>
+    <div class="field">
+      <label>투표 이름 <span class="tip">저장·불러오기에 사용</span></label>
+      <input type="text" id="pollName" placeholder="예: 8강 한국 vs 일본" />
+    </div>
     <div class="field">
       <label>유튜브 라이브 주소 또는 영상 ID <span class="tip">URL 전체를 붙여넣어도 ID만 자동 추출</span></label>
       <input type="text" id="videoUrl" placeholder="https://www.youtube.com/watch?v=XXXXXXXXXXX 또는 영상 ID" />
@@ -192,6 +230,10 @@
     <div class="field">
       <label class="switch"><input type="checkbox" id="showChat" /> 우측 채팅창 표시</label>
     </div>
+    <div class="field">
+      <label class="switch"><input type="checkbox" id="useKeywords" /> 집계 키워드 사용 <span class="tip">해제 시 별표 투표만 인정 (예: *1)</span></label>
+    </div>
+    <div class="vidnote">투표 확실성: 채팅에 <b>*번호</b>(예: <b>*1</b>)는 키워드 사용과 무관하게 항상 집계됩니다. <b>1</b>·<b>1번</b>·<b>호날두</b> 등은 ‘집계 키워드 사용’이 켜져 있고 키워드로 등록됐을 때만 집계됩니다.</div>
   </div>
 
   <div class="card">
@@ -275,6 +317,13 @@
   </div>
 </div><!-- /right -->
 </div><!-- /app -->
+
+<div class="modal-bg" id="loadModal" style="display:none">
+  <div class="modal">
+    <div class="modal-head"><span>📂 저장된 투표 불러오기</span><button id="loadClose">✕</button></div>
+    <div class="modal-list" id="loadList"></div>
+  </div>
+</div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -430,12 +479,14 @@ $("addChoice").addEventListener("click", () => addChoice());
 // ---------- load / build ----------
 function fill(cfg) {
   const poll = cfg.poll || {};
+  $("pollName").value = cfg.name || "";
   $("videoUrl").value = cfg.videoId || "";
   updateVidPreview();
   $("port").value = cfg.port || 3000;
   $("mode").value = poll.mode || "keyword";
   $("onevote").checked = !!poll.oneVotePerUser;
   $("showChat").checked = !!poll.showChat;
+  $("useKeywords").checked = poll.useKeywords !== false; // 기본값 사용(체크)
   const q = poll.question || poll.questionKr || "";
   $("q_best").value = q;
   $("q_winner").value = q;
@@ -461,6 +512,7 @@ function fill(cfg) {
 
 function buildConfig() {
   const base = {
+    name: $("pollName").value.trim(),
     videoId: extractVideoId($("videoUrl").value),
     port: parseInt($("port").value, 10) || 3000,
     poll: {
@@ -468,6 +520,7 @@ function buildConfig() {
       mode: $("mode").value,
       oneVotePerUser: $("onevote").checked,
       showChat: $("showChat").checked,
+      useKeywords: $("useKeywords").checked,
       graphicMode: $("graphicMode").value === "image" ? "image" : "bar",
       imageFps: parseInt($("imageFps").value, 10) || 24,
       question: (template === "winner" ? $("q_winner") : $("q_best")).value.trim(),
@@ -551,15 +604,105 @@ async function save() {
       setMsg("✔ " + data.message + (data.videoId ? " (videoId: " + data.videoId + ")" : ""), "ok");
       $("videoUrl").value = data.videoId || cfg.videoId; updateVidPreview();
       loadedConfig = cfg; // 이후 저장 비교 기준 갱신
-    } else {
-      setMsg("✖ " + (data.error || "저장 실패"), "err");
+      return true;
     }
+    setMsg("✖ " + (data.error || "저장 실패"), "err");
+    return false;
   } catch (e) {
     setMsg("요청 실패: " + e.message, "err");
+    return false;
   } finally {
     saveBtn.disabled = false;
   }
 }
+
+// ---------- 빈 설정(새로 만들기) ----------
+function blankConfig() {
+  return {
+    name: "",
+    videoId: "",
+    port: parseInt($("port").value, 10) || 3000,
+    poll: {
+      template: "best", mode: "keyword",
+      oneVotePerUser: false, showChat: false, useKeywords: true,
+      graphicMode: "bar", imageFps: 24, question: "", teams: [],
+    },
+  };
+}
+
+// ---------- 새로 만들기 ----------
+$("btnNew").addEventListener("click", async () => {
+  const doSave = window.confirm("기존 설정을 저장하시겠습니까?\n\n[확인] 저장 후 새로 만들기   [취소] 저장 안 함");
+  if (doSave) {
+    if (!$("pollName").value.trim()) {
+      const nm = window.prompt("저장할 투표 이름을 입력하세요.", "");
+      if (nm == null || !nm.trim()) { setMsg("이름이 없어 저장을 취소했습니다.", "err"); return; }
+      $("pollName").value = nm.trim();
+    }
+    const ok = await save();
+    if (!ok) return; // 저장 실패 시 새로 만들기 중단
+  }
+  fill(blankConfig());
+  loadedConfig = null;
+  setMsg("새 투표를 시작합니다. 항목을 채우고 저장하세요.", "ok");
+  $("pollName").focus();
+});
+
+// ---------- 불러오기 ----------
+const loadModal = $("loadModal");
+async function openLoadModal() {
+  $("loadList").innerHTML = '<div class="modal-empty">불러오는 중…</div>';
+  loadModal.style.display = "";
+  try {
+    const data = await fetch("/admin/presets").then((r) => r.json());
+    const presets = (data && data.presets) || [];
+    if (!presets.length) { $("loadList").innerHTML = '<div class="modal-empty">저장된 투표가 없습니다.</div>'; return; }
+    $("loadList").innerHTML = "";
+    for (const p of presets) {
+      const row = document.createElement("div");
+      row.className = "preset";
+      const when = p.savedAt ? new Date(p.savedAt).toLocaleString() : "";
+      row.innerHTML = `<div class="pn"><b></b><span></span></div><button class="del">삭제</button>`;
+      row.querySelector("b").textContent = p.name;
+      row.querySelector("span").textContent = when;
+      row.querySelector(".pn").addEventListener("click", () => loadPreset(p.id, p.name));
+      row.querySelector(".del").addEventListener("click", (e) => { e.stopPropagation(); deletePreset(p.id, p.name); });
+      $("loadList").appendChild(row);
+    }
+  } catch (e) {
+    $("loadList").innerHTML = '<div class="modal-empty">목록 불러오기 실패: ' + e.message + "</div>";
+  }
+}
+async function loadPreset(id, name) {
+  try {
+    const cfg = await fetch("/admin/preset?id=" + encodeURIComponent(id)).then((r) => r.json());
+    if (cfg && cfg.poll) {
+      fill(cfg);
+      loadedConfig = cfg;
+      loadModal.style.display = "none";
+      setMsg("‘" + (name || cfg.name || "") + "’ 불러옴. 저장을 눌러 적용하세요.", "ok");
+    } else {
+      setMsg("프리셋을 읽지 못했습니다.", "err");
+    }
+  } catch (e) {
+    setMsg("불러오기 실패: " + e.message, "err");
+  }
+}
+async function deletePreset(id, name) {
+  if (!window.confirm("‘" + name + "’ 프리셋을 삭제할까요?")) return;
+  try {
+    await fetch("/admin/preset/delete", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    openLoadModal(); // 목록 새로고침
+  } catch (e) {
+    setMsg("삭제 실패: " + e.message, "err");
+  }
+}
+$("btnLoad").addEventListener("click", openLoadModal);
+$("loadClose").addEventListener("click", () => { loadModal.style.display = "none"; });
+loadModal.addEventListener("click", (e) => { if (e.target === loadModal) loadModal.style.display = "none"; });
 
 async function resetStats() {
   const resetBtn = $("reset");

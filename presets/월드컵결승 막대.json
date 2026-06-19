@@ -1,0 +1,38 @@
+{
+  "name": "월드컵결승 막대",
+  "videoId": "uPNX6DHAkMw",
+  "port": 3000,
+  "poll": {
+    "template": "best",
+    "mode": "keyword",
+    "oneVotePerUser": false,
+    "showChat": false,
+    "useKeywords": false,
+    "graphicMode": "bar",
+    "imageFps": 24,
+    "question": "누가 제일 잘못햇음?",
+    "teams": [
+      {
+        "key": "A",
+        "name": "1. 김승규",
+        "subName": "",
+        "color": "#1e6fd6",
+        "keywords": [
+          "1"
+        ],
+        "image": null
+      },
+      {
+        "key": "B",
+        "name": "2. 홍명보",
+        "subName": "",
+        "color": "#d6281e",
+        "keywords": [
+          "2"
+        ],
+        "image": null
+      }
+    ]
+  },
+  "savedAt": 1781842148677
+}

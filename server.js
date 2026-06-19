@@ -94,6 +94,20 @@ function matchTeam(text) {
   return null;
 }
 
+/**
+ * 별표 투표: 메시지가 "*1" 처럼 별표+숫자 "그것만"일 때만 인정(앞뒤 공백만 허용).
+ * 키워드 사용 여부와 무관하게 항상 인정.
+ *   "*1" → teams[0]    "*2" → teams[1]
+ *   "* 1"(공백)·"*1 화이팅"·"*2 별로 *1" 등 다른 내용이 섞이면 불인정. 매칭 없으면 null.
+ */
+function matchStarVote(text) {
+  const m = String(text || "").trim().match(/^\*(\d{1,2})$/);
+  if (!m) return null;
+  const idx = parseInt(m[1], 10) - 1;
+  const team = config.poll.teams[idx];
+  return team ? team.key : null;
+}
+
 function registerVote(channelId, teamKey) {
   if (!teamKey) return false;
   if (config.poll.oneVotePerUser) {
@@ -104,6 +118,24 @@ function registerVote(channelId, teamKey) {
     rawCounts.set(teamKey, (rawCounts.get(teamKey) || 0) + 1);
   }
   return true;
+}
+
+/**
+ * 채팅 한 건을 집계 규칙에 따라 처리(실제 채팅/테스트 공용).
+ *  - 별표 투표(*N)는 키워드 사용 여부와 무관하게 항상 인정
+ *  - useKeywords 가 꺼져 있지 않으면 등록 키워드로도 집계
+ * 반환: 집계된 teamKey | null
+ */
+function countChatVote(channelId, text) {
+  if (!tallying) return null;
+  if (config.poll.mode !== "keyword" && config.poll.mode !== "auto") return null;
+  let teamKey = matchStarVote(text);
+  if (!teamKey && config.poll.useKeywords !== false) teamKey = matchTeam(text);
+  if (registerVote(channelId, teamKey)) {
+    pushPoll();
+    return teamKey;
+  }
+  return null;
 }
 
 function tallyKeyword() {
@@ -199,6 +231,30 @@ function adminQuestion() {
 
 // ---------- web + ws ----------
 const ASSETS_DIR = path.join(__dirname, "public", "assets");
+const PRESETS_DIR = path.join(__dirname, "presets");
+
+function ensureDir(d) {
+  try { fs.mkdirSync(d, { recursive: true }); } catch { /* ignore */ }
+}
+/** 투표 이름 → 파일명 안전화(한글 허용, 경로문자 제거) */
+function presetIdFromName(name) {
+  return String(name || "")
+    .trim()
+    .replace(/[\/\\:*?"<>|]/g, "_")
+    .replace(/\s+/g, " ")
+    .slice(0, 80);
+}
+/** 현재 config 를 이름 기준 프리셋 파일로 저장(업서트) */
+function savePreset(cfg) {
+  const name = cfg && cfg.name && String(cfg.name).trim();
+  if (!name) return null;
+  ensureDir(PRESETS_DIR);
+  const id = presetIdFromName(name);
+  const file = path.join(PRESETS_DIR, id + ".json");
+  const toSave = Object.assign({}, cfg, { name, savedAt: Date.now() });
+  fs.writeFileSync(file, JSON.stringify(toSave, null, 2) + "\n", "utf8");
+  return id;
+}
 
 const app = express();
 app.use(express.json({ limit: "256kb" }));
@@ -301,13 +357,78 @@ app.post("/admin/save", (req, res) => {
     return res.status(500).json({ ok: false, error: "파일 저장 실패: " + e.message });
   }
 
+  // 투표 이름이 있으면 프리셋으로도 저장(업서트)
+  let presetId = null;
+  try {
+    presetId = savePreset(parsed);
+  } catch (e) {
+    /* 프리셋 저장 실패는 라이브 적용에 영향 없음 */
+  }
+
   const keepStats = !!(req.body && req.body.keepStats);
   restartFromConfig(parsed, keepStats);
   res.json({
     ok: true,
-    message: keepStats ? "저장 완료 (통계 지속)." : "저장 완료 (통계 리셋).",
+    message:
+      (keepStats ? "저장 완료 (통계 지속)." : "저장 완료 (통계 리셋).") +
+      (presetId ? " · 프리셋 저장됨" : ""),
     videoId: parsed.videoId || "",
+    presetId,
   });
+});
+
+// admin: 프리셋(저장된 투표) 목록
+app.get("/admin/presets", (_req, res) => {
+  ensureDir(PRESETS_DIR);
+  let presets = [];
+  try {
+    presets = fs
+      .readdirSync(PRESETS_DIR)
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => {
+        const id = f.replace(/\.json$/, "");
+        let name = id, savedAt = 0;
+        try {
+          const j = JSON.parse(fs.readFileSync(path.join(PRESETS_DIR, f), "utf8"));
+          name = j.name || id;
+          savedAt = j.savedAt || 0;
+        } catch { /* 손상 파일 무시 */ }
+        return { id, name, savedAt };
+      })
+      .sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+  res.json({ ok: true, presets });
+});
+
+// admin: 프리셋 하나 가져오기 (?id=<파일명>)
+app.get("/admin/preset", (req, res) => {
+  const id = presetIdFromName(req.query.id || "");
+  const file = path.join(PRESETS_DIR, id + ".json");
+  if (!file.startsWith(PRESETS_DIR) || !fs.existsSync(file)) {
+    return res.status(404).json({ ok: false, error: "존재하지 않는 프리셋입니다." });
+  }
+  try {
+    res.type("application/json").send(fs.readFileSync(file, "utf8"));
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// admin: 프리셋 삭제 (?id=<파일명>)
+app.post("/admin/preset/delete", (req, res) => {
+  const id = presetIdFromName((req.body && req.body.id) || "");
+  const file = path.join(PRESETS_DIR, id + ".json");
+  if (!file.startsWith(PRESETS_DIR) || !fs.existsSync(file)) {
+    return res.status(404).json({ ok: false, error: "존재하지 않는 프리셋입니다." });
+  }
+  try {
+    fs.rmSync(file, { force: true });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 // admin: 통계 즉시 리셋 (config 변경 없음)
@@ -325,6 +446,35 @@ app.post("/admin/tally", (req, res) => {
   pushPoll();
   console.log(`[tally] ${tallying ? "ON (집계 시작)" : "OFF (집계 종료)"}`);
   res.json({ ok: true, on: tallying });
+});
+
+// admin: 테스트 채팅 주입 (YouTube 없이 집계 테스트). test.html 에서 사용.
+// body = { text, author?, channelId?, isSuperchat? }
+app.post("/admin/testchat", (req, res) => {
+  const b = req.body || {};
+  const text = typeof b.text === "string" ? b.text : "";
+  if (!text.trim()) return res.status(400).json({ ok: false, error: "text 가 필요합니다." });
+  const author = (typeof b.author === "string" && b.author.trim()) || "테스터";
+  const channelId = (typeof b.channelId === "string" && b.channelId) || `test-${author}`;
+  const isSuperchat = !!b.isSuperchat;
+
+  pushChat(author, text, isSuperchat);
+  const teamKey = countChatVote(channelId, text);
+  res.json({ ok: true, counted: !!teamKey, teamKey: teamKey || null });
+});
+
+// admin: 집계 키워드 사용 on/off (test.html 에서 즉시 토글). config.json 에도 반영.
+app.get("/admin/usekeywords", (_req, res) => res.json({ on: config.poll.useKeywords !== false }));
+app.post("/admin/usekeywords", (req, res) => {
+  const on = !!(req.body && req.body.on);
+  config.poll.useKeywords = on;
+  try {
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n", "utf8");
+  } catch (e) {
+    /* 파일 저장 실패해도 메모리 설정은 적용됨 */
+  }
+  console.log(`[usekeywords] ${on ? "ON (키워드 집계)" : "OFF (별표 투표만)"}`);
+  res.json({ ok: true, on });
 });
 
 const server = http.createServer(app);
@@ -452,10 +602,7 @@ function handleAction(action) {
     const isSuperchat = type === "addSuperChatItemAction";
     pushChat(author, text, isSuperchat);
 
-    if (tallying && (config.poll.mode === "keyword" || config.poll.mode === "auto")) {
-      const teamKey = matchTeam(text);
-      if (registerVote(action.authorChannelId, teamKey)) pushPoll();
-    }
+    countChatVote(action.authorChannelId, text);
   }
 }
 

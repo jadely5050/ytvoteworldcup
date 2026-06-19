@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ytworldcup — 투표 테스트 (시뮬레이터)</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: "Pretendard", "Noto Sans KR", -apple-system, system-ui, sans-serif;
+    background: #0f1115; color: #e7e9ee;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #9aa0ac; font-size: 14px; margin-bottom: 20px; }
+  .sub a { color: #5aa9ff; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  .card {
+    background: #161922; border: 1px solid #242a36; border-radius: 12px;
+    padding: 18px 20px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 14px; color: #c8cdd8; font-weight: 700; }
+  label { display: block; font-size: 13px; color: #aab0bc; margin: 0 0 6px; font-weight: 600; }
+  input[type=text], input[type=number] {
+    width: 100%; background: #0f1218; color: #e7e9ee;
+    border: 1px solid #2a2f3a; border-radius: 8px; padding: 11px 13px;
+    font-size: 14px; font-family: inherit;
+  }
+  input:focus { outline: none; border-color: #5aa9ff; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .row > * { flex: none; }
+  .grow { flex: 1 1 auto; min-width: 120px; }
+  button {
+    border: none; border-radius: 9px; padding: 11px 16px; font-size: 14px;
+    font-weight: 700; cursor: pointer; font-family: inherit; color: #fff;
+  }
+  button.primary { background: #2563eb; } button.primary:hover { background: #1d4fd7; }
+  button.ghost { background: #2a2f3a; } button.ghost:hover { background: #353b48; }
+  button.vote { background: #334155; } button.vote:hover { background: #475569; }
+  button.kw { background: #3f3a22; color: #ffe9a8; } button.kw:hover { background: #4d4628; }
+  button:disabled { opacity: .5; cursor: default; }
+  .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #c8cdd8; }
+  .switch input { width: 16px; height: 16px; }
+  .tip { color: #6b7180; font-size: 12px; }
+  .note { font-size: 12px; color: #6b7180; margin-top: 8px; }
+  .warn { color: #fbbf24; }
+
+  /* 키워드 에디터 */
+  .kwteam { border: 1px solid #2a2f3a; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px;
+    border-left: 4px solid var(--accent, #555); }
+  .kwteam .kn { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+
+  /* 집계 */
+  .tally { display: flex; flex-direction: column; gap: 8px; }
+  .trow { display: flex; align-items: center; gap: 12px; }
+  .tname { width: 160px; flex: none; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ttrack { flex: 1; height: 22px; background: #0f1218; border-radius: 6px; overflow: hidden; border: 1px solid #242a36; }
+  .tfill { height: 100%; width: 0; transition: width .25s; }
+  .tnum { width: 120px; flex: none; text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+
+  #log { font-size: 13px; line-height: 1.5; max-height: 240px; overflow-y: auto;
+    background: #0f1218; border: 1px solid #242a36; border-radius: 8px; padding: 10px 12px; }
+  #log .ok { color: #4ade80; }
+  #log .no { color: #9aa0ac; }
+  .qhead { font-size: 13px; color: #aab0bc; margin: 4px 0 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🧪 투표 테스트 (시뮬레이터)</h1>
+  <div class="sub">
+    실제 서버/유튜브와 <b>분리된</b> 로컬 시뮬레이터입니다. 채팅 집계 규칙(서버와 동일)을 이 페이지 안에서만 테스트합니다.
+    &nbsp;·&nbsp; <a href="/admin.html">설정</a>
+  </div>
+
+  <div class="card">
+    <h2>집계 키워드</h2>
+    <div class="row" style="margin-bottom:12px">
+      <label class="switch"><input type="checkbox" id="useKw" /> 집계 키워드 사용 <span class="tip">(해제 시 *번호 투표만 인정)</span></label>
+    </div>
+    <div id="kwEditor" style="display:none">
+      <div class="qhead">보기별 집계 키워드 (쉼표로 구분) — 아래 채팅이 이 키워드와 매칭되는지 테스트합니다</div>
+      <div id="kwTeams"></div>
+    </div>
+    <div class="row">
+      <label class="switch"><input type="checkbox" id="oneVote" /> 한 사람당 1표</label>
+      <label class="switch"><input type="checkbox" id="uniqueUser" checked /> 매번 다른 사용자</label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>빠른 투표</h2>
+    <div class="qhead">별표 투표 (키워드 사용과 무관하게 항상 집계 · 메시지가 정확히 *번호일 때만)</div>
+    <div class="row" id="starBtns"></div>
+    <div class="qhead" style="margin-top:14px">키워드 투표 (위 키워드의 첫 단어로 전송)</div>
+    <div class="row" id="kwBtns"></div>
+  </div>
+
+  <div class="card">
+    <h2>직접 입력</h2>
+    <div class="row">
+      <div class="grow"><input type="text" id="freeText" placeholder="채팅 내용 (예: *1, 메시, *2 별로 *1)" /></div>
+      <button class="primary" id="sendFree">테스트</button>
+    </div>
+    <div class="note">입력한 채팅이 어느 보기로 집계되는지(또는 집계 안 됨) 아래 로그·집계에 표시됩니다.</div>
+  </div>
+
+  <div class="card">
+    <h2>대량 랜덤 투표</h2>
+    <div class="row">
+      <div><label>표 수</label><input type="number" id="bulkN" value="30" min="1" max="5000" style="width:110px" /></div>
+      <button class="primary" id="bulkGo" style="align-self:flex-end">랜덤 전송</button>
+    </div>
+    <div class="note">임의의 보기를 <b>*번호</b>로 투표(서로 다른 사용자). 게이지/효과 확인용.</div>
+  </div>
+
+  <div class="card">
+    <h2>테스트 집계 <button class="ghost" id="resetTally" style="float:right;padding:6px 12px;font-size:12px">리셋</button></h2>
+    <div class="tally" id="tally"></div>
+    <div class="note" id="tallyMeta"></div>
+  </div>
+
+  <div class="card">
+    <h2>로그</h2>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let teams = [];          // [{name,color,keywords:[...]}]  (keywords = 테스트용, 편집 가능)
+let counts = [];         // 보기별 누적 집계
+let userVotes = {};      // channelId -> teamIdx (1인 1표 모드)
+
+function parseKw(s) { return String(s || "").split(",").map((x) => x.trim()).filter(Boolean); }
+function uid() { return "u" + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3); }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function logLine(html, cls) {
+  const div = document.createElement("div");
+  div.className = cls || ""; div.innerHTML = html;
+  $("log").prepend(div);
+}
+
+// ===== 서버와 동일한 매칭 로직 (클라이언트 재현) =====
+// 별표 투표: 메시지가 정확히 "*N" 일 때만(앞뒤 공백 허용). 반환: 보기 index | null
+function matchStar(text) {
+  const m = String(text || "").trim().match(/^\*(\d{1,2})$/);
+  if (!m) return null;
+  const i = parseInt(m[1], 10) - 1;
+  return (i >= 0 && i < teams.length) ? i : null;
+}
+// 키워드 매칭: 토큰 정확일치 우선, 없으면 2글자 이상 포함. 반환: 보기 index | null
+function matchKeyword(text) {
+  const lower = String(text || "").toLowerCase().trim();
+  if (!lower) return null;
+  const tokens = lower.split(/\s+/);
+  for (let i = 0; i < teams.length; i++) {
+    for (const kw of teams[i].keywords) { if (tokens.includes(String(kw).toLowerCase())) return i; }
+  }
+  for (let i = 0; i < teams.length; i++) {
+    for (const kw of teams[i].keywords) {
+      const k = String(kw).toLowerCase();
+      if (k.length >= 2 && lower.includes(k)) return i;
+    }
+  }
+  return null;
+}
+
+// 채팅 한 건 처리 → 집계
+function feed(text, channelId) {
+  let idx = matchStar(text);
+  if (idx === null && $("useKw").checked) idx = matchKeyword(text);
+
+  if (idx === null) { logLine(`· <b>${escapeHtml(text)}</b> → 집계 안 됨`, "no"); return; }
+
+  if ($("oneVote").checked) {
+    if (userVotes[channelId] === idx) { logLine(`· <b>${escapeHtml(text)}</b> → 이미 같은 곳 투표(무시)`, "no"); return; }
+    userVotes[channelId] = idx;
+    counts = teams.map(() => 0);
+    for (const k in userVotes) counts[userVotes[k]]++;
+  } else {
+    counts[idx]++;
+  }
+  logLine(`✓ <b>${escapeHtml(text)}</b> → ${teams[idx].name} 집계`, "ok");
+  renderTally();
+}
+
+function channelId() {
+  return $("uniqueUser").checked ? uid() : "고정사용자";
+}
+
+// ===== 집계 표시 =====
+function renderTally() {
+  const total = counts.reduce((a, b) => a + b, 0);
+  const box = $("tally"); box.innerHTML = "";
+  teams.forEach((t, i) => {
+    const c = counts[i] || 0;
+    const pct = total ? Math.round((c / total) * 100) : 0;
+    const row = document.createElement("div");
+    row.className = "trow";
+    row.innerHTML =
+      `<div class="tname" style="color:${t.color}">${escapeHtml(t.name || "보기" + (i + 1))}</div>` +
+      `<div class="ttrack"><div class="tfill" style="width:${pct}%;background:${t.color}"></div></div>` +
+      `<div class="tnum">${c.toLocaleString()}표 (${pct}%)</div>`;
+    box.appendChild(row);
+  });
+  $("tallyMeta").textContent = `총 ${total.toLocaleString()}표`;
+}
+function resetTally() { counts = teams.map(() => 0); userVotes = {}; renderTally(); }
+
+// ===== 키워드 에디터 / 버튼 구성 =====
+function buildKwEditor() {
+  const box = $("kwTeams"); box.innerHTML = "";
+  teams.forEach((t, i) => {
+    const div = document.createElement("div");
+    div.className = "kwteam";
+    div.style.setProperty("--accent", t.color);
+    div.innerHTML =
+      `<div class="kn" style="color:${t.color}">${i + 1}. ${escapeHtml(t.name || "보기" + (i + 1))}</div>` +
+      `<input type="text" class="kw" value="${escapeHtml((t.keywords || []).join(", "))}" placeholder="예: 1, 메시, #1" />`;
+    const inp = div.querySelector(".kw");
+    inp.addEventListener("input", () => { teams[i].keywords = parseKw(inp.value); rebuildKwButtons(); });
+    box.appendChild(div);
+  });
+}
+function buildStarButtons() {
+  const box = $("starBtns"); box.innerHTML = "";
+  teams.forEach((t, i) => {
+    const b = document.createElement("button");
+    b.className = "vote";
+    b.textContent = `*${i + 1} (${t.name || "보기" + (i + 1)})`;
+    b.onclick = () => feed("*" + (i + 1), channelId());
+    box.appendChild(b);
+  });
+}
+function rebuildKwButtons() {
+  const box = $("kwBtns"); box.innerHTML = "";
+  teams.forEach((t) => {
+    const kw = (t.keywords || [])[0];
+    if (!kw) return;
+    const b = document.createElement("button");
+    b.className = "kw";
+    b.textContent = kw;
+    b.onclick = () => feed(kw, channelId());
+    box.appendChild(b);
+  });
+}
+
+// ===== 이벤트 =====
+$("useKw").addEventListener("change", () => {
+  $("kwEditor").style.display = $("useKw").checked ? "" : "none";
+});
+$("oneVote").addEventListener("change", resetTally);
+$("resetTally").onclick = resetTally;
+$("sendFree").onclick = () => {
+  const text = $("freeText").value.trim();
+  if (!text) return;
+  feed(text, channelId());
+  $("freeText").value = "";
+};
+$("freeText").addEventListener("keydown", (e) => { if (e.key === "Enter") $("sendFree").click(); });
+$("bulkGo").onclick = () => {
+  if (!teams.length) return;
+  let n = parseInt($("bulkN").value, 10) || 0;
+  while (n-- > 0) {
+    const i = Math.floor(Math.random() * teams.length);
+    feed("*" + (i + 1), uid());
+  }
+};
+
+// ===== 초기화: config 에서 보기/키워드 가져와 채움 =====
+async function init() {
+  try {
+    const cfg = await fetch("/config").then((r) => r.json());
+    const poll = cfg.poll || {};
+    teams = (poll.teams || []).map((t) => ({
+      name: t.name, color: t.color || "#888", keywords: (t.keywords || []).slice(),
+    }));
+    $("useKw").checked = poll.useKeywords !== false;
+    $("oneVote").checked = !!poll.oneVotePerUser;
+  } catch (e) {
+    logLine("✖ 설정 불러오기 실패: " + e.message + " (빈 보기로 시작)", "no");
+  }
+  if (!teams.length) teams = [{ name: "보기 1", color: "#1e6fd6", keywords: ["1"] }, { name: "보기 2", color: "#d6281e", keywords: ["2"] }];
+  $("kwEditor").style.display = $("useKw").checked ? "" : "none";
+  buildKwEditor(); buildStarButtons(); rebuildKwButtons(); resetTally();
+}
+init();
+</script>
+</body>
+</html>
