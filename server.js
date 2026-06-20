@@ -25,11 +25,24 @@ try {
   console.warn("[warn] masterchat 로드 실패 — 채팅 수신 없이 오버레이만 서빙합니다.", e.message);
 }
 
+const { createChzzkSource } = require("./sources/chzzk");
+
 // ---------- config ----------
 const CONFIG_PATH = path.join(__dirname, "config.json");
 function loadConfig() {
   const raw = fs.readFileSync(CONFIG_PATH, "utf8");
-  return JSON.parse(raw);
+  return normalizeConfig(JSON.parse(raw));
+}
+/** 누락 필드 하위호환 보정: sources 토글, 치지직 채널 ID */
+function normalizeConfig(cfg) {
+  if (!cfg || typeof cfg !== "object") return cfg;
+  if (typeof cfg.chzzkChannelId !== "string") cfg.chzzkChannelId = "";
+  const s = cfg.sources && typeof cfg.sources === "object" ? cfg.sources : {};
+  cfg.sources = {
+    youtube: s.youtube !== false, // 기존 설정 호환: 기본 켜짐
+    chzzk: s.chzzk === true, // 기본 꺼짐
+  };
+  return cfg;
 }
 let config = loadConfig();
 const PORT = process.env.PORT || config.port || 3000;
@@ -54,6 +67,17 @@ function extractVideoId(input) {
   // 마지막 경로 조각이 11자리면 사용
   const tail = s.split(/[/?#]/).filter(Boolean).pop();
   if (tail && /^[\w-]{11}$/.test(tail)) return tail;
+  return s; // 추출 실패 시 원문 유지(사용자 확인용)
+}
+
+/** 치지직 라이브 URL 또는 raw 채널ID 에서 32자리 hex 채널ID 추출 */
+function extractChzzkChannelId(input) {
+  const s = String(input || "").trim();
+  if (!s) return "";
+  if (/^[0-9a-f]{32}$/i.test(s)) return s; // 이미 채널 ID 형태
+  // chzzk.naver.com/live/<id> · chzzk.naver.com/<id> 등 경로에서 추출
+  const m = s.match(/([0-9a-f]{32})/i);
+  if (m) return m[1];
   return s; // 추출 실패 시 원문 유지(사용자 확인용)
 }
 
@@ -348,8 +372,10 @@ app.post("/admin/save", (req, res) => {
     return res.status(400).json({ ok: false, error: "poll.teams 배열(2개 이상)이 필요합니다." });
   }
 
-  // videoId 가 전체 URL 로 들어와도 ID 만 추출
+  // videoId / 치지직 채널ID 가 전체 URL 로 들어와도 ID 만 추출
   parsed.videoId = extractVideoId(parsed.videoId);
+  parsed.chzzkChannelId = extractChzzkChannelId(parsed.chzzkChannelId);
+  normalizeConfig(parsed); // sources 토글 기본값 보정
 
   try {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(parsed, null, 2) + "\n", "utf8");
@@ -509,6 +535,17 @@ function pushChat(author, text, isSuperchat) {
   broadcast("chat", entry);
 }
 
+/**
+ * 플랫폼 무관 채팅 한 건 수집(표시 + 집계). 모든 소스 커넥터의 공용 진입점.
+ * channelId 는 플랫폼별 prefix 를 붙여 플랫폼 간 동일 닉네임이 별개 사용자로
+ * 1인1표 처리되도록 한다.
+ */
+function ingestChat({ platform, channelId, author, text, isDonation }) {
+  const id = channelId ? `${platform}:${channelId}` : null;
+  pushChat(author, text, !!isDonation);
+  countChatVote(id, text);
+}
+
 /** YTText / runs / 문자열 → 평문 텍스트 */
 function textOf(v) {
   if (v == null) return "";
@@ -600,11 +637,21 @@ function handleAction(action) {
     const author = action.authorName || action.authorChannelId || "익명";
     const text = stringify ? stringify(action.message || []) : String(action.message || "");
     const isSuperchat = type === "addSuperChatItemAction";
-    pushChat(author, text, isSuperchat);
-
-    countChatVote(action.authorChannelId, text);
+    ingestChat({
+      platform: "yt",
+      channelId: action.authorChannelId,
+      author,
+      text,
+      isDonation: isSuperchat,
+    });
   }
 }
+
+// 치지직 소스: 모든 채팅을 공용 ingestChat 으로 흘려보낸다(YouTube 와 합산).
+const chzzkSource = createChzzkSource({
+  onMessage: ({ author, channelId, text, isDonation }) =>
+    ingestChat({ platform: "chzzk", channelId, author, text, isDonation }),
+});
 
 let currentMc = null;
 let mcGeneration = 0; // 재시작 시 이전 세대의 콜백/재연결을 무효화
@@ -695,7 +742,22 @@ async function startMasterchat() {
   connect();
 }
 
-/** config 저장 후 호출: 메모리 config 갱신 + 투표 상태 초기화 + masterchat 재연결 */
+/** 활성화된 모든 채팅 소스 시작(YouTube / 치지직). 각 소스는 독립적으로 동작. */
+function startSources() {
+  if (config.sources && config.sources.youtube) startMasterchat();
+  else console.log("[sources] YouTube 채팅 수집 비활성화");
+
+  if (config.sources && config.sources.chzzk) chzzkSource.start(config.chzzkChannelId);
+  else console.log("[sources] 치지직 채팅 수집 비활성화");
+}
+
+/** 모든 채팅 소스 중지. */
+function stopSources() {
+  stopMasterchat();
+  chzzkSource.stop();
+}
+
+/** config 저장 후 호출: 메모리 config 갱신 + 투표 상태 초기화 + 소스 재연결 */
 /** 투표/채팅 통계 초기화 */
 function resetStats() {
   userVotes.clear();
@@ -706,11 +768,11 @@ function resetStats() {
 }
 
 function restartFromConfig(newConfig, keepStats) {
-  stopMasterchat();
-  config = newConfig;
+  stopSources();
+  config = normalizeConfig(newConfig);
   if (!keepStats) resetStats();
   pushPoll();
-  startMasterchat();
+  startSources();
 }
 
 // ---------- boot ----------
@@ -733,8 +795,12 @@ server.listen(PORT, () => {
   console.log("  ytworldcup 서버 실행 중");
   console.log(`  오버레이 URL : http://localhost:${PORT}/overlay.html`);
   console.log(`  투표 모드     : ${config.poll.mode}`);
-  console.log(`  videoId       : ${config.videoId || "(미설정)"}`);
+  const srcList = [
+    config.sources.youtube ? `YouTube(${config.videoId || "미설정"})` : null,
+    config.sources.chzzk ? `치지직(${config.chzzkChannelId || "미설정"})` : null,
+  ].filter(Boolean);
+  console.log(`  채팅 소스     : ${srcList.length ? srcList.join(" + ") : "(없음)"}`);
   console.log("  vMix → Add Input → Web Browser → 위 URL, Transparent Background 체크");
   console.log("==================================================");
-  startMasterchat();
+  startSources();
 });

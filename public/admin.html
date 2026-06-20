@@ -206,9 +206,14 @@
       <input type="text" id="pollName" placeholder="예: 8강 한국 vs 일본" />
     </div>
     <div class="field">
-      <label>유튜브 라이브 주소 또는 영상 ID <span class="tip">URL 전체를 붙여넣어도 ID만 자동 추출</span></label>
+      <label class="switch"><input type="checkbox" id="srcYoutube" /> 유튜브 채팅 수집</label>
       <input type="text" id="videoUrl" placeholder="https://www.youtube.com/watch?v=XXXXXXXXXXX 또는 영상 ID" />
       <div class="vidnote">추출된 videoId: <b id="vidPreview">—</b></div>
+    </div>
+    <div class="field">
+      <label class="switch"><input type="checkbox" id="srcChzzk" /> 치지직 채팅 수집 <span class="tip">유튜브와 동시 집계 가능</span></label>
+      <input type="text" id="chzzkUrl" placeholder="https://chzzk.naver.com/live/XXXX… 또는 채널 ID" />
+      <div class="vidnote">추출된 채널 ID: <b id="chzzkPreview">—</b></div>
     </div>
     <div class="grid2">
       <div class="field">
@@ -350,6 +355,17 @@ function extractVideoId(input) {
 function updateVidPreview() { $("vidPreview").textContent = extractVideoId($("videoUrl").value) || "—"; }
 $("videoUrl").addEventListener("input", updateVidPreview);
 
+// ---------- 치지직 채널 ID ----------
+function extractChzzkChannelId(input) {
+  const s = String(input || "").trim();
+  if (!s) return "";
+  if (/^[0-9a-f]{32}$/i.test(s)) return s;
+  const m = s.match(/([0-9a-f]{32})/i);
+  return m ? m[1] : s;
+}
+function updateChzzkPreview() { $("chzzkPreview").textContent = extractChzzkChannelId($("chzzkUrl").value) || "—"; }
+$("chzzkUrl").addEventListener("input", updateChzzkPreview);
+
 // ---------- color <-> hex ----------
 function bindColor(picker, hex, card) {
   const sync = (v) => { picker.value = v; hex.value = v; if (card) card.style.setProperty("--accent", v); };
@@ -482,6 +498,11 @@ function fill(cfg) {
   $("pollName").value = cfg.name || "";
   $("videoUrl").value = cfg.videoId || "";
   updateVidPreview();
+  $("chzzkUrl").value = cfg.chzzkChannelId || "";
+  updateChzzkPreview();
+  const sources = cfg.sources || {};
+  $("srcYoutube").checked = sources.youtube !== false; // 기본 켜짐(호환)
+  $("srcChzzk").checked = sources.chzzk === true;
   $("port").value = cfg.port || 3000;
   $("mode").value = poll.mode || "keyword";
   $("onevote").checked = !!poll.oneVotePerUser;
@@ -514,6 +535,8 @@ function buildConfig() {
   const base = {
     name: $("pollName").value.trim(),
     videoId: extractVideoId($("videoUrl").value),
+    chzzkChannelId: extractChzzkChannelId($("chzzkUrl").value),
+    sources: { youtube: $("srcYoutube").checked, chzzk: $("srcChzzk").checked },
     port: parseInt($("port").value, 10) || 3000,
     poll: {
       template,
@@ -621,6 +644,8 @@ function blankConfig() {
   return {
     name: "",
     videoId: "",
+    chzzkChannelId: "",
+    sources: { youtube: true, chzzk: false },
     port: parseInt($("port").value, 10) || 3000,
     poll: {
       template: "best", mode: "keyword",
