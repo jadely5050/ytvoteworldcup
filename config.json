@@ -1,6 +1,11 @@
 {
   "name": "월드컵 캐릭터",
   "videoId": "fSvZ1oEG6rE",
+  "chzzkChannelId": "",
+  "sources": {
+    "youtube": true,
+    "chzzk": false
+  },
   "port": 3000,
   "poll": {
     "template": "best",

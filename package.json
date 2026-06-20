@@ -9,6 +9,7 @@
     "postinstall": "node scripts/patch-masterchat.js"
   },
   "dependencies": {
+    "chzzk": "^1.10.4",
     "express": "^4.19.2",
     "masterchat": "^1.1.0",
     "multer": "^2.2.0",
