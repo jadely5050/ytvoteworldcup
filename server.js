@@ -483,8 +483,9 @@ app.post("/admin/testchat", (req, res) => {
   const author = (typeof b.author === "string" && b.author.trim()) || "테스터";
   const channelId = (typeof b.channelId === "string" && b.channelId) || `test-${author}`;
   const isSuperchat = !!b.isSuperchat;
+  const source = b.source === "chzzk" ? "chzzk" : "yt";
 
-  pushChat(author, text, isSuperchat);
+  pushChat(author, text, isSuperchat, source);
   const teamKey = countChatVote(channelId, text);
   res.json({ ok: true, counted: !!teamKey, teamKey: teamKey || null });
 });
@@ -524,12 +525,14 @@ wss.on("connection", (ws) => {
 
 // ---------- masterchat ----------
 let _chatSeen = 0;
-function pushChat(author, text, isSuperchat) {
+function pushChat(author, text, isSuperchat, source, meta) {
   if (process.env.DEBUG_CHAT) {
     _chatSeen++;
-    if (_chatSeen <= 20) console.log(`[chat#${_chatSeen}] ${author}: ${text}`);
+    if (_chatSeen <= 20) console.log(`[chat#${_chatSeen}] (${source || "?"}) ${author}: ${text}`);
   }
-  const entry = { author, text, isSuperchat: !!isSuperchat };
+  const entry = { author, text, isSuperchat: !!isSuperchat, source: source || "" };
+  if (meta && meta.emojis && typeof meta.emojis === "object") entry.emojis = meta.emojis;
+  if (meta && Array.isArray(meta.badges) && meta.badges.length) entry.badges = meta.badges;
   chatHistory.push(entry);
   if (chatHistory.length > CHAT_HISTORY_MAX) chatHistory.shift();
   broadcast("chat", entry);
@@ -540,9 +543,9 @@ function pushChat(author, text, isSuperchat) {
  * channelId 는 플랫폼별 prefix 를 붙여 플랫폼 간 동일 닉네임이 별개 사용자로
  * 1인1표 처리되도록 한다.
  */
-function ingestChat({ platform, channelId, author, text, isDonation }) {
+function ingestChat({ platform, channelId, author, text, isDonation, emojis, badges }) {
   const id = channelId ? `${platform}:${channelId}` : null;
-  pushChat(author, text, !!isDonation);
+  pushChat(author, text, !!isDonation, platform, { emojis, badges });
   countChatVote(id, text);
 }
 
@@ -604,6 +607,35 @@ function findPollData(action) {
   return { question, total, options };
 }
 
+/**
+ * 유튜브 채팅 runs → { text, emojis }.
+ *  - 커스텀 이모지(멤버십 등): {:ytN:} 토큰 + emojis 맵(키→이미지URL)
+ *  - 표준 이모지: emojiId(유니코드 문자)를 그대로 텍스트에 삽입(브라우저가 렌더)
+ */
+function parseYtMessage(runs) {
+  if (!Array.isArray(runs)) return { text: textOf(runs), emojis: null };
+  let text = "";
+  const emojis = {};
+  let n = 0;
+  for (const r of runs) {
+    if (!r) continue;
+    if (typeof r.text === "string") { text += r.text; continue; }
+    if (r.emoji) {
+      const em = r.emoji;
+      const thumbs = em.image && em.image.thumbnails;
+      const url = thumbs && thumbs.length ? thumbs[thumbs.length - 1].url : "";
+      if (em.isCustomEmoji && url) {
+        const key = "yt" + n++;
+        emojis[key] = url;
+        text += `{:${key}:}`;
+      } else {
+        text += em.emojiId || (em.shortcuts && em.shortcuts[0]) || "";
+      }
+    }
+  }
+  return { text, emojis: Object.keys(emojis).length ? emojis : null };
+}
+
 const _seenTypes = new Set();
 function handleAction(action) {
   if (!action || !action.type) return;
@@ -635,22 +667,26 @@ function handleAction(action) {
 
   if (type === "addChatItemAction" || type === "addSuperChatItemAction") {
     const author = action.authorName || action.authorChannelId || "익명";
-    const text = stringify ? stringify(action.message || []) : String(action.message || "");
+    const parsed = parseYtMessage(action.message || []);
     const isSuperchat = type === "addSuperChatItemAction";
+    const badges = [];
+    if (action.membership && action.membership.thumbnail) badges.push(action.membership.thumbnail);
     ingestChat({
       platform: "yt",
       channelId: action.authorChannelId,
       author,
-      text,
+      text: parsed.text,
       isDonation: isSuperchat,
+      emojis: parsed.emojis,
+      badges,
     });
   }
 }
 
 // 치지직 소스: 모든 채팅을 공용 ingestChat 으로 흘려보낸다(YouTube 와 합산).
 const chzzkSource = createChzzkSource({
-  onMessage: ({ author, channelId, text, isDonation }) =>
-    ingestChat({ platform: "chzzk", channelId, author, text, isDonation }),
+  onMessage: ({ author, channelId, text, isDonation, emojis, badges }) =>
+    ingestChat({ platform: "chzzk", channelId, author, text, isDonation, emojis, badges }),
 });
 
 let currentMc = null;

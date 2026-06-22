@@ -1,9 +1,9 @@
 {
-  "name": "치지직",
+  "name": "치지직+유튭",
   "videoId": "SFJmftxYFiI",
-  "chzzkChannelId": "bb382c2c0cc9fa7c86ab3b037fb5799c",
+  "chzzkChannelId": "b044e3a3b9259246bc92e863e7d3f3b8",
   "sources": {
-    "youtube": true,
+    "youtube": false,
     "chzzk": true
   },
   "port": 3000,
@@ -15,7 +15,7 @@
     "useKeywords": true,
     "graphicMode": "image",
     "imageFps": 5,
-    "question": "",
+    "question": "이번 경기에서 제일 활약할 선수는?",
     "teams": [
       {
         "key": "A",
@@ -47,5 +47,5 @@
       }
     ]
   },
-  "savedAt": 1782108214765
+  "savedAt": 1782111013651
 }
