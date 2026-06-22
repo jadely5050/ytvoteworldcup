@@ -3,7 +3,7 @@
   "videoId": "SFJmftxYFiI",
   "chzzkChannelId": "b044e3a3b9259246bc92e863e7d3f3b8",
   "sources": {
-    "youtube": false,
+    "youtube": true,
     "chzzk": true
   },
   "port": 3000,
@@ -25,7 +25,9 @@
         "keywords": [
           "은평구",
           "박성재",
-          "김앤장"
+          "김앤장",
+          "조희대",
+          "이란"
         ],
         "image": {
           "dir": "/assets/1782106075212-A/",
@@ -47,5 +49,5 @@
       }
     ]
   },
-  "savedAt": 1782111013651
+  "savedAt": 1782111297442
 }
