@@ -139,7 +139,13 @@
     display: flex; align-items: flex-end; justify-content: center;
     gap: 40px; padding: 8px 4px 4px;
   }
-  .icell { display: flex; align-items: center; gap: 4px; }
+  /* 칸: 이름(위) + [그림 + 득표수](아래) 세로 배치 */
+  .icell { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .iname {
+    font-size: 34px; font-weight: 800; letter-spacing: -.5px; white-space: nowrap;
+    text-align: center; max-width: 420px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ibody { display: flex; align-items: center; gap: 4px; }
   /* 알파 PNG가 패널 위에 그대로 올라감 (자체 배경 없음) */
   .iart {
     flex: none; display: flex; align-items: center; justify-content: center;
@@ -402,6 +408,12 @@ function buildImageCell(t, n) {
   const cell = document.createElement("div");
   cell.className = "icell";
 
+  // 사진 위에 표시 이름(투표 안내: "1. 메시" 처럼 번호 포함)
+  const nameEl = document.createElement("div");
+  nameEl.className = "iname";
+  nameEl.style.color = t.color;
+  nameEl.textContent = t.name || "보기";
+
   const art = document.createElement("div");
   art.className = "iart";
   art.style.height = box.h + "px";
@@ -440,7 +452,11 @@ function buildImageCell(t, n) {
   pctEl.className = "ipct";
   nums.append(cntEl, pctEl);
 
-  cell.append(art, nums);
+  const body = document.createElement("div");
+  body.className = "ibody";
+  body.append(art, nums);
+
+  cell.append(nameEl, body);
   return {
     name: t.name, dir, count, frame: 0, prevCount: -1, frames,
     els: { cell, art, img, cntEl, pctEl },

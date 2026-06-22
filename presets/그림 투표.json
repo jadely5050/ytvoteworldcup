@@ -1,0 +1,56 @@
+{
+  "name": "그림 투표",
+  "videoId": "64oRGHVDjnA",
+  "chzzkChannelId": "",
+  "sources": {
+    "youtube": true,
+    "chzzk": false
+  },
+  "port": 3000,
+  "poll": {
+    "template": "best",
+    "mode": "keyword",
+    "oneVotePerUser": false,
+    "showChat": false,
+    "useKeywords": false,
+    "graphicMode": "image",
+    "imageFps": 5,
+    "question": "제일 활약할 선수는?",
+    "teams": [
+      {
+        "key": "A",
+        "name": "1. 메시",
+        "subName": "",
+        "color": "#1e6fd6",
+        "keywords": [],
+        "image": {
+          "dir": "/assets/1781841650510-A/",
+          "count": 1
+        }
+      },
+      {
+        "key": "B",
+        "name": "2. 호날두",
+        "subName": "",
+        "color": "#d6281e",
+        "keywords": [],
+        "image": {
+          "dir": "/assets/1781841659568-B/",
+          "count": 20
+        }
+      },
+      {
+        "key": "C",
+        "name": "3. 손흥민",
+        "subName": "",
+        "color": "#01b22d",
+        "keywords": [],
+        "image": {
+          "dir": "/assets/1781842079463-C/",
+          "count": 1
+        }
+      }
+    ]
+  },
+  "savedAt": 1782106034282
+}
