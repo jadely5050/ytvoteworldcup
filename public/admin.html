@@ -206,12 +206,12 @@
       <input type="text" id="pollName" placeholder="예: 8강 한국 vs 일본" />
     </div>
     <div class="field">
-      <label class="switch"><input type="checkbox" id="srcYoutube" /> 유튜브 채팅 수집</label>
+      <label>유튜브 라이브 주소 또는 영상 ID <span class="tip">URL 전체 붙여넣어도 ID만 추출</span></label>
       <input type="text" id="videoUrl" placeholder="https://www.youtube.com/watch?v=XXXXXXXXXXX 또는 영상 ID" />
       <div class="vidnote">추출된 videoId: <b id="vidPreview">—</b></div>
     </div>
     <div class="field">
-      <label class="switch"><input type="checkbox" id="srcChzzk" /> 치지직 채팅 수집 <span class="tip">유튜브와 동시 집계 가능</span></label>
+      <label>치지직 채널 주소 또는 채널 ID <span class="tip">선택</span></label>
       <input type="text" id="chzzkUrl" placeholder="https://chzzk.naver.com/live/XXXX… 또는 채널 ID" />
       <div class="vidnote">추출된 채널 ID: <b id="chzzkPreview">—</b></div>
     </div>
@@ -233,7 +233,12 @@
       <label class="switch"><input type="checkbox" id="onevote" /> 한 사람당 1표 (체크 해제 시 중복 투표 허용)</label>
     </div>
     <div class="field">
-      <label class="switch"><input type="checkbox" id="showChat" /> 우측 채팅창 표시</label>
+      <div class="inline" style="flex-wrap:wrap; gap:18px">
+        <label class="switch"><input type="checkbox" id="showChat" /> 우측 채팅창 표시</label>
+        <label class="switch"><input type="checkbox" id="srcYoutube" /> <b style="color:#ff4d4d">유튜브</b></label>
+        <label class="switch"><input type="checkbox" id="srcChzzk" /> <b style="color:#00d38c">치지직</b></label>
+      </div>
+      <div class="vidnote">유튜브·치지직 중 켜진 플랫폼의 채팅만 수집·표시됩니다.</div>
     </div>
     <div class="field">
       <label class="switch"><input type="checkbox" id="useKeywords" /> 집계 키워드 사용 <span class="tip">해제 시 별표 투표만 인정 (예: *1)</span></label>
@@ -327,6 +332,21 @@
   <div class="modal">
     <div class="modal-head"><span>📂 저장된 투표 불러오기</span><button id="loadClose">✕</button></div>
     <div class="modal-list" id="loadList"></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="srcModal" style="display:none">
+  <div class="modal" style="width:380px">
+    <div class="modal-head"><span>⚠ 채팅 소스 선택</span></div>
+    <div style="padding:20px">
+      <p style="margin:0 0 18px; font-size:14px; color:#c8cdd8; line-height:1.6">
+        유튜브, 치지직 둘 중 하나는 켜져야 합니다.<br>어디를 켤까요?
+      </p>
+      <div class="row" style="margin:0">
+        <button class="primary" id="srcPickYt" style="flex:1; background:#dc2626">유튜브</button>
+        <button class="primary" id="srcPickChzzk" style="flex:1; background:#02b46a">치지직</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -728,6 +748,19 @@ async function deletePreset(id, name) {
 $("btnLoad").addEventListener("click", openLoadModal);
 $("loadClose").addEventListener("click", () => { loadModal.style.display = "none"; });
 loadModal.addEventListener("click", (e) => { if (e.target === loadModal) loadModal.style.display = "none"; });
+
+// ---------- 채팅 소스(유튜브/치지직) 검증 ----------
+// 채팅창 표시가 켜진 상태에서 둘 다 꺼지면 → 하나를 켜도록 모달 강제
+function checkChatSources() {
+  if ($("showChat").checked && !$("srcYoutube").checked && !$("srcChzzk").checked) {
+    $("srcModal").style.display = "";
+  }
+}
+$("showChat").addEventListener("change", checkChatSources);
+$("srcYoutube").addEventListener("change", checkChatSources);
+$("srcChzzk").addEventListener("change", checkChatSources);
+$("srcPickYt").addEventListener("click", () => { $("srcYoutube").checked = true; $("srcModal").style.display = "none"; });
+$("srcPickChzzk").addEventListener("click", () => { $("srcChzzk").checked = true; $("srcModal").style.display = "none"; });
 
 async function resetStats() {
   const resetBtn = $("reset");

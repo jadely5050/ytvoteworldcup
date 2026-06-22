@@ -1,7 +1,7 @@
 {
-  "name": "치지직",
-  "videoId": "",
-  "chzzkChannelId": "bb382c2c0cc9fa7c86ab3b037fb5799c",
+  "name": "치지직+유튭",
+  "videoId": "SFJmftxYFiI",
+  "chzzkChannelId": "b044e3a3b9259246bc92e863e7d3f3b8",
   "sources": {
     "youtube": false,
     "chzzk": true
@@ -15,7 +15,7 @@
     "useKeywords": true,
     "graphicMode": "image",
     "imageFps": 5,
-    "question": "",
+    "question": "이번 경기에서 제일 활약할 선수는?",
     "teams": [
       {
         "key": "A",
@@ -23,7 +23,9 @@
         "subName": "",
         "color": "#1e6fd6",
         "keywords": [
-          "은평구"
+          "은평구",
+          "박성재",
+          "김앤장"
         ],
         "image": {
           "dir": "/assets/1782106075212-A/",

@@ -191,6 +191,8 @@
   .chat-list { display: flex; flex-direction: column; gap: 9px; overflow: hidden; }
   .chat-msg { font-size: 19px; line-height: 1.25; animation: slideIn .35s ease; }
   .chat-msg .name { font-weight: 700; color: #2a64c4; margin-right: 6px; }
+  .chat-msg .cbadge { width: 20px; height: 20px; vertical-align: -4px; margin-right: 3px; border-radius: 4px; }
+  .chat-msg .cemote { width: 30px; height: 30px; vertical-align: -8px; margin: 0 1px; }
   .chat-msg.sc { background:#ffd54a; border-radius:8px; padding:6px 9px; font-weight:600; }
   @keyframes slideIn { from{opacity:0; transform:translateY(8px)} to{opacity:1; transform:none} }
 
@@ -523,11 +525,41 @@ function renderImageMode(teams, p) {
   });
 }
 
+// 플랫폼 상징색: YouTube 빨강 / 치지직 초록(가독성 위해 약간 진하게)
+function sourceColor(src) {
+  if (src === "chzzk") return "#00b265";
+  if (src === "yt") return "#ff0000";
+  return ""; // 알 수 없음 → 기본(CSS) 색
+}
+// 치지직/네이버 + 유튜브/구글 CDN 이미지 URL만 허용(보안). 아니면 빈 문자열.
+function safeImg(url, cls) {
+  if (typeof url !== "string") return "";
+  if (!/^https:\/\/[a-z0-9.-]+\.(pstatic\.net|naver\.com|ggpht\.com|googleusercontent\.com|ytimg\.com|gstatic\.com|youtube\.com)\//i.test(url)) return "";
+  return `<img class="${cls}" src="${url.replace(/"/g, "%22")}" alt="" />`;
+}
+// 메시지 텍스트의 {:키:} 이모티콘 토큰을 이미지로 치환(텍스트는 먼저 이스케이프).
+function renderChatText(text, emojis) {
+  let html = escapeHtml(text || "");
+  if (emojis && typeof emojis === "object") {
+    html = html.replace(/\{:([^:}]+):\}/g, (tok, key) => {
+      const img = safeImg(emojis[key], "cemote");
+      return img || tok;
+    });
+  }
+  return html;
+}
 function addChat(m) {
   const list = $("chatList");
   const div = document.createElement("div");
   div.className = "chat-msg" + (m.isSuperchat ? " sc" : "");
-  div.innerHTML = `<span class="name">${escapeHtml(m.author || "")}</span>${escapeHtml(m.text || "")}`;
+  const color = sourceColor(m.source);
+  const nameStyle = color ? ` style="color:${color}"` : "";
+  let badges = "";
+  if (Array.isArray(m.badges)) for (const b of m.badges) badges += safeImg(b, "cbadge");
+  div.innerHTML =
+    badges +
+    `<span class="name"${nameStyle}>${escapeHtml(m.author || "")}</span>` +
+    renderChatText(m.text, m.emojis);
   list.appendChild(div);
   while (list.children.length > maxChat) list.removeChild(list.firstChild);
 }

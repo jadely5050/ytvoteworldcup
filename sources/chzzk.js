@@ -10,9 +10,29 @@ try {
   console.warn("[warn] chzzk 로드 실패 — 치지직 채팅 수신 없이 동작합니다.", e.message);
 }
 
+/** 프로필에서 뱃지 이미지 URL 모음(구독·실시간후원·활동 뱃지). 중복 제거, 최대 5개. */
+function collectBadges(profile) {
+  if (!profile) return [];
+  const urls = [];
+  const push = (u) => { if (typeof u === "string" && u && !urls.includes(u)) urls.push(u); };
+  if (profile.badge) push(profile.badge.imageUrl);
+  const sp = profile.streamingProperty || {};
+  if (sp.subscription && sp.subscription.badge) push(sp.subscription.badge.imageUrl);
+  if (sp.realTimeDonationRanking && sp.realTimeDonationRanking.badge) push(sp.realTimeDonationRanking.badge.imageUrl);
+  for (const b of profile.activityBadges || []) {
+    if (b && b.activated !== false) push(b.imageUrl);
+  }
+  return urls.slice(0, 5);
+}
+
+/** 채팅 이벤트에서 이모티콘 맵(키→URL) 추출. 없으면 null. */
+function emojisOf(e) {
+  return e && e.extras && typeof e.extras.emojis === "object" ? e.extras.emojis : null;
+}
+
 /**
  * 치지직 채팅 소스를 생성한다.
- * @param {{ onMessage: (msg: {author:string, channelId:string|null, text:string, isDonation:boolean}) => void }} opts
+ * @param {{ onMessage: (msg: {author:string, channelId:string|null, text:string, isDonation:boolean, emojis?:object|null, badges?:string[]}) => void }} opts
  * @returns {{ start: (channelId: string) => void, stop: () => void }}
  */
 function createChzzkSource({ onMessage }) {
@@ -86,6 +106,8 @@ function createChzzkSource({ onMessage }) {
               channelId: (e.profile && e.profile.userIdHash) || null,
               text: e.message || "",
               isDonation: false,
+              emojis: emojisOf(e),
+              badges: collectBadges(e.profile),
             });
           } catch {
             /* 단일 채팅 처리 실패는 무시 */
@@ -100,6 +122,8 @@ function createChzzkSource({ onMessage }) {
               channelId: (e.profile && e.profile.userIdHash) || null,
               text: e.message || "",
               isDonation: true,
+              emojis: emojisOf(e),
+              badges: collectBadges(e.profile),
             });
           } catch {
             /* ignore */
