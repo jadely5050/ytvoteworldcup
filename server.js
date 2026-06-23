@@ -178,6 +178,12 @@ function tallyKeyword() {
 }
 
 /** 오버레이가 기대하는 poll payload 생성 */
+/** 보기별 "띠용"(득표 바운스) 강도 1~5 보정. 누락/이상값은 기본 3(중간). */
+function boingLevel(t) {
+  const n = Math.round(Number(t && t.boing));
+  return n >= 1 && n <= 5 ? n : 3;
+}
+
 function buildPollPayload() {
   const useNative =
     (config.poll.mode === "native" || config.poll.mode === "auto") && nativePoll;
@@ -200,6 +206,7 @@ function buildPollPayload() {
         count: opt.count || 0,
         pct: opt.pct != null ? opt.pct : 0,
         image: cfg.image || null,
+        boing: boingLevel(cfg),
       };
     });
     // 질문: admin 질문이 있으면 우선, 비어 있으면 유튜브 설문 질문 사용
@@ -230,6 +237,7 @@ function buildPollPayload() {
       count,
       pct: total ? Math.round((count / total) * 100) : 0,
       image: t.image || null,
+      boing: boingLevel(t),
     };
   });
   return {
