@@ -241,6 +241,14 @@
       <div class="vidnote">유튜브·치지직 중 켜진 플랫폼의 채팅만 수집·표시됩니다.</div>
     </div>
     <div class="field">
+      <label>채팅창에 보여줄 채팅 <span class="tip">‘우측 채팅창 표시’가 켜져 있을 때 적용</span></label>
+      <select id="chatFilter">
+        <option value="votedOnly">투표한 채팅만 보이기 (기본)</option>
+        <option value="all">모두 보이기</option>
+      </select>
+      <div class="vidnote">‘투표한 채팅만’: 별표(*1)·등록 키워드에 매칭된 채팅만 표시 (집계는 두 경우 모두 그대로 동작).</div>
+    </div>
+    <div class="field">
       <label class="switch"><input type="checkbox" id="useKeywords" /> 집계 키워드 사용 <span class="tip">해제 시 별표 투표만 인정 (예: *1)</span></label>
     </div>
     <div class="vidnote">투표 확실성: 채팅에 <b>*번호</b>(예: <b>*1</b>)는 키워드 사용과 무관하게 항상 집계됩니다. <b>1</b>·<b>1번</b>·<b>호날두</b> 등은 ‘집계 키워드 사용’이 켜져 있고 키워드로 등록됐을 때만 집계됩니다.</div>
@@ -527,6 +535,7 @@ function fill(cfg) {
   $("mode").value = poll.mode || "keyword";
   $("onevote").checked = !!poll.oneVotePerUser;
   $("showChat").checked = !!poll.showChat;
+  $("chatFilter").value = poll.chatFilter === "all" ? "all" : "votedOnly"; // 기본: 투표한 채팅만
   $("useKeywords").checked = poll.useKeywords !== false; // 기본값 사용(체크)
   const q = poll.question || poll.questionKr || "";
   $("q_best").value = q;
@@ -563,6 +572,7 @@ function buildConfig() {
       mode: $("mode").value,
       oneVotePerUser: $("onevote").checked,
       showChat: $("showChat").checked,
+      chatFilter: $("chatFilter").value === "all" ? "all" : "votedOnly",
       useKeywords: $("useKeywords").checked,
       graphicMode: $("graphicMode").value === "image" ? "image" : "bar",
       imageFps: parseInt($("imageFps").value, 10) || 24,
@@ -669,7 +679,7 @@ function blankConfig() {
     port: parseInt($("port").value, 10) || 3000,
     poll: {
       template: "best", mode: "keyword",
-      oneVotePerUser: false, showChat: false, useKeywords: true,
+      oneVotePerUser: false, showChat: false, chatFilter: "votedOnly", useKeywords: true,
       graphicMode: "bar", imageFps: 24, question: "", teams: [],
     },
   };

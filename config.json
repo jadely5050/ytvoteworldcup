@@ -12,6 +12,7 @@
     "mode": "keyword",
     "oneVotePerUser": false,
     "showChat": true,
+    "chatFilter": "votedOnly",
     "useKeywords": true,
     "graphicMode": "image",
     "imageFps": 5,
