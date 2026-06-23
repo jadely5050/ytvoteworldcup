@@ -430,7 +430,14 @@ function makeChoice(data, idx) {
     `<div class="field"><label>집계 키워드 <span class="tip">쉼표</span></label><textarea class="c_kw" placeholder="예: 1, 손흥민, 손"></textarea></div>` +
     `<div class="field c_imgfield"><label>그림 <span class="tip">PNG · 1장=스틸, 여러 장=시퀀스</span></label>` +
       `<input type="file" class="c_img" accept="image/png" multiple />` +
-      `<div class="c_imgprev"></div></div>`;
+      `<div class="inline" style="gap:12px; align-items:center; margin-top:9px">` +
+        `<div class="c_imgprev" style="flex:1; margin-top:0"></div>` +
+        `<div class="c_boingbox" title="득표 시 그림 들썩임(띠용) 강도" style="display:flex; flex-direction:column; align-items:center; gap:3px">` +
+          `<label style="margin:0; font-size:11px; white-space:nowrap">띠용 <b class="c_boingv">3</b></label>` +
+          `<input type="range" class="c_boing" min="1" max="5" step="1" value="3" style="width:92px" />` +
+          `<span style="font-size:9px; color:#8a909c">잔잔 1 — 5 방방</span>` +
+        `</div>` +
+      `</div></div>`;
   div.querySelector(".c_name").value = c.name || "";
   div.querySelector(".c_kw").value = (c.keywords || []).join(", ");
   const picker = div.querySelector(".c_color"), hex = div.querySelector(".c_hex");
@@ -444,6 +451,14 @@ function makeChoice(data, idx) {
   div._image = c.image || null;
   setImgPrev(div);
   div.querySelector(".c_img").addEventListener("change", (e) => uploadChoiceImage(div, e.target));
+
+  // 띠용 강도 슬라이더(1~5, 기본 3)
+  const boingR = div.querySelector(".c_boing");
+  const boingV = div.querySelector(".c_boingv");
+  const bl = c.boing >= 1 && c.boing <= 5 ? c.boing : 3;
+  boingR.value = bl;
+  boingV.textContent = bl;
+  boingR.addEventListener("input", () => { boingV.textContent = boingR.value; });
 
   return div;
 }
@@ -593,6 +608,7 @@ function buildConfig() {
       color: r.querySelector(".c_color").value,
       keywords: parseKw(r.querySelector(".c_kw").value),
       image: r._image || null,
+      boing: parseInt(r.querySelector(".c_boing").value, 10) || 3,
     }));
   }
   return base;
