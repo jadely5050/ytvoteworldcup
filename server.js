@@ -33,7 +33,7 @@ function loadConfig() {
   const raw = fs.readFileSync(CONFIG_PATH, "utf8");
   return normalizeConfig(JSON.parse(raw));
 }
-/** 누락 필드 하위호환 보정: sources 토글, 치지직 채널 ID */
+/** 누락 필드 하위호환 보정: sources 토글, 치지직 채널 ID, 채팅 표시 정책 */
 function normalizeConfig(cfg) {
   if (!cfg || typeof cfg !== "object") return cfg;
   if (typeof cfg.chzzkChannelId !== "string") cfg.chzzkChannelId = "";
@@ -42,6 +42,12 @@ function normalizeConfig(cfg) {
     youtube: s.youtube !== false, // 기존 설정 호환: 기본 켜짐
     chzzk: s.chzzk === true, // 기본 꺼짐
   };
+  // 채팅창 표시 정책: "votedOnly"(투표한 채팅만, 기본) | "all"(모두)
+  if (cfg.poll && typeof cfg.poll === "object") {
+    if (cfg.poll.chatFilter !== "all" && cfg.poll.chatFilter !== "votedOnly") {
+      cfg.poll.chatFilter = "votedOnly";
+    }
+  }
   return cfg;
 }
 let config = loadConfig();
@@ -160,6 +166,28 @@ function countChatVote(channelId, text) {
     return teamKey;
   }
   return null;
+}
+
+/**
+ * 채팅 텍스트가 투표(별표/키워드)에 해당하는가 — 채팅창 표시 필터용.
+ * 집계(countChatVote)와 달리 tallying 종료/중복투표와 무관하게,
+ * "이 채팅이 어떤 보기에 투표한 내용인지"만 판별한다.
+ */
+function chatMatchesVote(text) {
+  if (config.poll.mode !== "keyword" && config.poll.mode !== "auto") return false;
+  if (matchStarVote(text)) return true;
+  if (config.poll.useKeywords !== false && matchTeam(text)) return true;
+  return false;
+}
+
+/**
+ * 현재 채팅 표시 정책에 따라 이 채팅을 패널에 보여줄지 결정.
+ *  - chatFilter === "all"        : 모든 채팅 표시
+ *  - chatFilter === "votedOnly"  : 투표한 채팅만 표시 (기본)
+ */
+function shouldShowChat(text) {
+  if (config.poll.chatFilter === "all") return true;
+  return chatMatchesVote(text);
 }
 
 function tallyKeyword() {
@@ -485,9 +513,10 @@ app.post("/admin/testchat", (req, res) => {
   const isSuperchat = !!b.isSuperchat;
   const source = b.source === "chzzk" ? "chzzk" : "yt";
 
-  pushChat(author, text, isSuperchat, source);
   const teamKey = countChatVote(channelId, text);
-  res.json({ ok: true, counted: !!teamKey, teamKey: teamKey || null });
+  const shown = shouldShowChat(text);
+  if (shown) pushChat(author, text, isSuperchat, source);
+  res.json({ ok: true, counted: !!teamKey, teamKey: teamKey || null, shown });
 });
 
 // admin: 집계 키워드 사용 on/off (test.html 에서 즉시 토글). config.json 에도 반영.
@@ -545,8 +574,8 @@ function pushChat(author, text, isSuperchat, source, meta) {
  */
 function ingestChat({ platform, channelId, author, text, isDonation, emojis, badges }) {
   const id = channelId ? `${platform}:${channelId}` : null;
-  pushChat(author, text, !!isDonation, platform, { emojis, badges });
   countChatVote(id, text);
+  if (shouldShowChat(text)) pushChat(author, text, !!isDonation, platform, { emojis, badges });
 }
 
 /** YTText / runs / 문자열 → 평문 텍스트 */
