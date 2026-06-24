@@ -26,7 +26,7 @@
     border-radius: 22px;
     padding: 22px 30px 26px;
     box-shadow: 0 12px 40px rgba(0,0,0,.35);
-    backdrop-filter: blur(4px);
+    /* backdrop-filter 제거: 배경이 96% 불투명이라 효과는 거의 없고 GPU 상시 합성 비용만 큼 */
     transition: transform .3s ease;
   }
   /* 멀티(제일 ??한 ??은?) 그래픽은 전체 0.7배 */
@@ -52,6 +52,8 @@
   }
   .live .badge.closed { background: #555; animation: none; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
+  /* 비활성(송출 OFF) 시 무한 애니메이션 정지 — 안 보이는데 도는 repaint 제거 */
+  body.idle .badge { animation: none; }
 
   /* 퍼센트 행 */
   .pct-row { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 10px; }
@@ -278,6 +280,7 @@ function renderPoll(p) {
 }
 
 function renderDuo(teams) {
+  isImageMode = false;
   $("duo").style.display = "";
   $("multi").style.display = "none";
   $("imgmode").style.display = "none";
@@ -343,6 +346,7 @@ function retrigger(el, cls) {
 }
 
 function renderMulti(teams) {
+  isImageMode = false;
   $("duo").style.display = "none";
   $("multi").style.display = "";
   $("imgmode").style.display = "none";
@@ -393,8 +397,8 @@ function renderMulti(teams) {
 // 칸별 DOM/프레임/직전 득표수 캐시. 단일 rAF 루프로 모든 칸 시퀀스를 반복 재생.
 let imageState = [];
 let imgFps = 24;
-let imgRAF = null;
-let imgLastTs = 0;
+let imgTimer = null;     // 시퀀스 재생 타이머(setTimeout) — RAF 대신 imgFps 로만 깨움
+let isImageMode = false; // 현재 그림 모드인지(활성 판단용)
 
 // 후보 수에 따른 그림 높이(폭은 그림 비율대로 auto). w 는 그림 없는 placeholder 용.
 function artBox(n) {
@@ -467,23 +471,26 @@ function buildImageCell(t, n) {
   };
 }
 
-function imageLoop(ts) {
-  imgRAF = requestAnimationFrame(imageLoop);
-  if (!imageState.length) return;
-  const interval = 1000 / (imgFps || 24);
-  if (ts - imgLastTs < interval) return;
-  imgLastTs = ts;
+function imageTick() {
   for (const st of imageState) {
     if (st.count > 1 && st.frames.length > 1 && st.els.img) {
       st.frame = (st.frame + 1) % st.frames.length;
       st.els.img.src = st.frames[st.frame].src;
     }
   }
+  imgTimer = setTimeout(imageTick, 1000 / (imgFps || 24));
 }
-function startImageLoop() { if (!imgRAF) { imgLastTs = 0; imgRAF = requestAnimationFrame(imageLoop); } }
-function stopImageLoop() { if (imgRAF) { cancelAnimationFrame(imgRAF); imgRAF = null; } }
+// 활성(보이고 송출 중)일 때만, 그리고 실제 재생할 시퀀스가 있을 때만 가동.
+function startImageLoop() {
+  if (imgTimer || !isActive()) return;
+  const hasSeq = imageState.some((st) => st.count > 1 && st.frames.length > 1);
+  if (!hasSeq) return;
+  imgTimer = setTimeout(imageTick, 1000 / (imgFps || 24));
+}
+function stopImageLoop() { if (imgTimer) { clearTimeout(imgTimer); imgTimer = null; } }
 
 function renderImageMode(teams, p) {
+  isImageMode = true;
   $("duo").style.display = "none";
   $("multi").style.display = "none";
   $("imgmode").style.display = "";
@@ -571,13 +578,27 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-// PGM 모드(?pgm=1): 송출(onair) 상태에 따라 그래픽 fade in/out. 그 외(PVW)는 항상 표시.
+// PGM 모드(?pgm=1): 송출(onair) 상태에 따라 그래픽 fade in/out. 그 외(PVW/vMix)는 항상 표시.
 const PGM = new URLSearchParams(location.search).get("pgm") === "1";
+let onAirState = !PGM; // PVW/단독/vMix 는 항상 활성, PGM 은 onair 신호로 결정
 if (PGM) $("stage").style.opacity = "0";
-function setOnAir(on) {
-  if (!PGM) return;
-  $("stage").style.opacity = on ? "1" : "0";
+
+// 활성 = 화면에 그래픽이 떠 있는 상태. 비활성(PGM 송출 OFF)이면 시퀀스 루프·애니 정지.
+// ※ document.hidden 은 쓰지 않는다 — vMix 오프스크린 브라우저가 hidden 으로 보고돼
+//    출력이 멈출 수 있기 때문. admin 미리보기 절전은 admin.html 에서 iframe 으로 처리.
+function isActive() { return onAirState || !PGM; }
+function updateActivity() {
+  const active = isActive();
+  document.body.classList.toggle("idle", !active); // 무한 CSS 애니 정지
+  if (active) startImageLoop();
+  else stopImageLoop();
 }
+function setOnAir(on) {
+  onAirState = !!on;
+  if (PGM) $("stage").style.opacity = on ? "1" : "0";
+  updateActivity();
+}
+updateActivity(); // 초기 상태 반영(PGM 은 송출 전이라 비활성)
 
 function connect() {
   const ws = new WebSocket("ws://" + location.host);

@@ -321,6 +321,8 @@
     </div>
   </div>
   <div class="airbar">
+    <span id="previewNote" style="font-size:12px;color:#6b7180"></span>
+    <button id="previewToggle" class="tally on" title="미리보기를 끄면 노트북 CPU/발열이 크게 줄어듭니다">⏸ 미리보기 끄기</button>
     <span id="airmsg" style="font-size:13px;color:#9aa0ac"></span>
     <button id="tally" class="tally on">■ 집계 종료</button>
     <button id="onair" class="onair off">● 송출 시작</button>
@@ -800,6 +802,36 @@ const ro = new ResizeObserver(scaleScreens);
 document.querySelectorAll(".screen").forEach((s) => ro.observe(s));
 window.addEventListener("resize", scaleScreens);
 scaleScreens();
+
+// ---------- 미리보기 절전 ----------
+// PGM/PVW iframe 은 각각 1920x1080 풀 그래픽을 상시 렌더 → 노트북 발열 주범.
+// (1) 탭이 백그라운드면 자동으로 iframe 을 내려 렌더 정지, 복귀 시 복원.
+// (2) 수동 토글로 강제 끄기/켜기(상시 절전).
+const PREV = [
+  { f: $("pgmFrame"), src: "/layout.html" },
+  { f: $("pvwFrame"), src: "/overlay.html" },
+];
+let previewOn = true;      // 사용자 토글 의도
+function applyPreview(show) {
+  for (const p of PREV) {
+    const want = show ? p.src : "about:blank";
+    // src 가 이미 원하는 상태면 재로딩(=WS 재연결) 방지
+    if ((p.f.getAttribute("src") || "") !== want) p.f.setAttribute("src", want);
+  }
+  if (show) setTimeout(scaleScreens, 50);
+}
+function refreshPreview() { applyPreview(previewOn && !document.hidden); }
+function setPreviewToggle() {
+  const b = $("previewToggle");
+  b.textContent = previewOn ? "⏸ 미리보기 끄기" : "▶ 미리보기 켜기";
+  b.classList.toggle("on", previewOn);
+  b.classList.toggle("off", !previewOn);
+  $("previewNote").textContent = previewOn ? "" : "미리보기 OFF (절전)";
+  refreshPreview();
+}
+$("previewToggle").addEventListener("click", () => { previewOn = !previewOn; setPreviewToggle(); });
+document.addEventListener("visibilitychange", refreshPreview);
+setPreviewToggle();
 
 // ---------- 송출 (on-air) ----------
 let onair = false;

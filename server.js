@@ -513,8 +513,22 @@ function broadcast(type, data) {
     if (client.readyState === 1) client.send(msg);
   }
 }
-function pushPoll() {
+
+// poll 갱신 코얼레싱: 득표가 폭주해도 화면 갱신은 ≈6~7Hz 로 묶는다.
+// (집계 자체는 즉시. 표시/브로드캐스트만 트레일링 디바운스로 합침.)
+const POLL_THROTTLE_MS = 150;
+let pollDirty = false;
+let pollTimer = null;
+function flushPoll() {
+  pollTimer = null;
+  if (!pollDirty) return;
+  pollDirty = false;
   broadcast("poll", buildPollPayload());
+}
+function pushPoll() {
+  pollDirty = true;
+  if (pollTimer) return; // 이미 예약됨 → 만료 시 최신 상태 1회 전송
+  pollTimer = setTimeout(flushPoll, POLL_THROTTLE_MS);
 }
 
 wss.on("connection", (ws) => {
