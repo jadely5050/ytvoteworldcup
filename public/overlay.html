@@ -664,33 +664,36 @@ function renderScroll(scrollData) {
   const speed = Math.max(1, Math.min(10, config.speed || 5));
   scrollAnimationDuration = 20 - (speed - 1) * 1.67; // 20s(speed=1) ~ 5s(speed=10)
 
-  // 새로운 아이템 렌더링
+  // 새로운 아이템 렌더링 (항목을 3회 반복해서 무한 스크롤 효과)
   track.innerHTML = "";
-  queue.forEach((item) => {
-    const div = document.createElement("div");
-    div.className = "scroll-item " + (item.type === "guide" ? "guide" : "chat");
+  const repeatCount = Math.max(3, Math.ceil(100 / (queue.length || 1))); // 최소 3회
+  for (let rep = 0; rep < repeatCount; rep++) {
+    queue.forEach((item) => {
+      const div = document.createElement("div");
+      div.className = "scroll-item " + (item.type === "guide" ? "guide" : "chat");
 
-    if (item.type === "chat") {
-      if (item.author) {
-        const author = document.createElement("span");
-        author.className = "author";
-        author.textContent = item.author;
-        div.appendChild(author);
+      if (item.type === "chat") {
+        if (item.author) {
+          const author = document.createElement("span");
+          author.className = "author";
+          author.textContent = item.author;
+          div.appendChild(author);
+        }
+        const text = document.createElement("span");
+        text.className = "text";
+        text.textContent = item.text;
+        div.appendChild(text);
+      } else {
+        // guide
+        const text = document.createElement("span");
+        text.className = "text";
+        text.textContent = item.text;
+        div.appendChild(text);
       }
-      const text = document.createElement("span");
-      text.className = "text";
-      text.textContent = item.text;
-      div.appendChild(text);
-    } else {
-      // guide
-      const text = document.createElement("span");
-      text.className = "text";
-      text.textContent = item.text;
-      div.appendChild(text);
-    }
 
-    track.appendChild(div);
-  });
+      track.appendChild(div);
+    });
+  }
 
   // 애니메이션 적용 (이전 애니메이션 제거 후 재시작)
   track.style.animation = "none";

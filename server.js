@@ -99,6 +99,7 @@ function extractChzzkChannelId(input) {
 
 // ---------- state ----------
 const CHAT_HISTORY_MAX = 30;
+const SCROLL_QUEUE_MAX = 100; // 스크롤 큐 최대 크기
 const chatHistory = [];
 /** authorChannelId -> teamKey (oneVotePerUser 일 때 마지막 표 기준) */
 const userVotes = new Map();
@@ -261,7 +262,7 @@ function buildPollPayload() {
       imageFps,
       source: "native",
       scroll: {
-        queue: scrollQueue.splice(0, scrollQueue.length), // 큐 내용 추출 후 비우기
+        queue: [...scrollQueue], // 큐 복사 (비우지 않음)
         config: config.poll.scroll || {},
       },
     };
@@ -576,12 +577,14 @@ app.post("/admin/testchat", (req, res) => {
       text: text,
       teamKey: teamKey,
     });
+    if (scrollQueue.length > SCROLL_QUEUE_MAX) scrollQueue.shift();
     scrollChatCount++;
     if (config.poll.scroll.showGuideText && scrollChatCount >= config.poll.scroll.guideFrequency) {
       scrollQueue.push({
         type: "guide",
         text: config.poll.scroll.guideText,
       });
+      if (scrollQueue.length > SCROLL_QUEUE_MAX) scrollQueue.shift();
       scrollChatCount = 0;
     }
   }
@@ -653,6 +656,7 @@ function ingestChat({ platform, channelId, author, text, isDonation, emojis, bad
       text: text,
       teamKey: teamKey,
     });
+    if (scrollQueue.length > SCROLL_QUEUE_MAX) scrollQueue.shift();
     scrollChatCount++;
     // 안내문 빈도 확인
     if (config.poll.scroll.showGuideText && scrollChatCount >= config.poll.scroll.guideFrequency) {
@@ -660,6 +664,7 @@ function ingestChat({ platform, channelId, author, text, isDonation, emojis, bad
         type: "guide",
         text: config.poll.scroll.guideText,
       });
+      if (scrollQueue.length > SCROLL_QUEUE_MAX) scrollQueue.shift();
       scrollChatCount = 0;
     }
   }
