@@ -292,6 +292,7 @@ function adminQuestion() {
 // ---------- web + ws ----------
 const ASSETS_DIR = path.join(__dirname, "public", "assets");
 const PRESETS_DIR = path.join(__dirname, "presets");
+const LOGS_DIR = path.join(__dirname, "logs");
 
 function ensureDir(d) {
   try { fs.mkdirSync(d, { recursive: true }); } catch { /* ignore */ }
@@ -314,6 +315,19 @@ function savePreset(cfg) {
   const toSave = Object.assign({}, cfg, { name, savedAt: Date.now() });
   fs.writeFileSync(file, JSON.stringify(toSave, null, 2) + "\n", "utf8");
   return id;
+}
+
+/** 설정 저장 오류 로그 기록 */
+function logSaveError(error, errorCode) {
+  try {
+    ensureDir(LOGS_DIR);
+    const timestamp = new Date().toISOString();
+    const logLine = JSON.stringify({ timestamp, error, errorCode }) + "\n";
+    const logFile = path.join(LOGS_DIR, "save-errors.log");
+    fs.appendFileSync(logFile, logLine, "utf8");
+  } catch (e) {
+    console.error("[log error] 에러 로그 작성 실패:", e.message);
+  }
 }
 
 const app = express();
@@ -437,6 +451,14 @@ app.post("/admin/save", (req, res) => {
     videoId: parsed.videoId || "",
     presetId,
   });
+});
+
+// admin: 설정 저장 오류 로그 기록
+app.post("/admin/log-error", (req, res) => {
+  const error = req.body && typeof req.body.error === "string" ? req.body.error : "Unknown error";
+  const errorCode = req.body && typeof req.body.errorCode === "string" ? req.body.errorCode : "";
+  logSaveError(error, errorCode);
+  res.json({ ok: true });
 });
 
 // admin: 프리셋(저장된 투표) 목록
