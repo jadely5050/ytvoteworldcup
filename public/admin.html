@@ -309,6 +309,45 @@
     </div>
   </div>
 
+  <!-- 스크롤 설정 -->
+  <div class="card">
+    <h2>스크롤</h2>
+    <div class="field">
+      <label class="switch">
+        <input type="checkbox" id="scrollEnabled" checked />
+        스크롤 송출
+      </label>
+    </div>
+    <div id="scrollSettings">
+      <div class="field">
+        <label class="switch">
+          <input type="checkbox" id="scrollShowAuthor" checked />
+          작성자 표시
+        </label>
+      </div>
+      <div class="field">
+        <label class="switch">
+          <input type="checkbox" id="scrollShowGuideText" checked />
+          투표 안내문 표시
+        </label>
+      </div>
+      <div class="field" id="guideTextField">
+        <label>투표 안내문 내용</label>
+        <input type="text" id="scrollGuideText" placeholder="투표해주세요!" value="투표해주세요!" />
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>안내문 송출 빈도 <span class="tip">채팅 개수</span></label>
+          <input type="number" id="scrollGuideFrequency" value="5" min="1" max="50" />
+        </div>
+        <div class="field">
+          <label>스크롤 속도 <span class="tip">1(느림) ~ 10(빠름)</span></label>
+          <input type="number" id="scrollSpeed" value="5" min="1" max="10" />
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="row">
     <button class="primary" id="save">💾 설정 저장</button>
     <button class="danger" id="reset">♻ 통계 리셋</button>
@@ -506,6 +545,17 @@ async function uploadChoiceImage(div, input) {
   }
 }
 
+// 스크롤 활성화 여부에 따라 설정 UI 표시 토글
+function updateScrollSettings() {
+  const enabled = $("scrollEnabled").checked;
+  $("scrollSettings").style.opacity = enabled ? "1" : "0.5";
+  $("scrollSettings").style.pointerEvents = enabled ? "auto" : "none";
+  const showGuide = $("scrollShowGuideText").checked;
+  $("guideTextField").style.display = showGuide ? "" : "none";
+}
+$("scrollEnabled").addEventListener("change", updateScrollSettings);
+$("scrollShowGuideText").addEventListener("change", updateScrollSettings);
+
 // 그래픽 모드에 따라 fps/업로드 UI 표시 토글
 function applyGraphicModeUI() {
   const isImg = $("graphicMode").value === "image";
@@ -572,6 +622,16 @@ function fill(cfg) {
   // best 에디터
   setChoices(tpl === "best" ? teams : null);
 
+  // 스크롤 설정
+  const scroll = poll.scroll || {};
+  $("scrollEnabled").checked = scroll.enabled !== false;
+  $("scrollShowAuthor").checked = scroll.showAuthor !== false;
+  $("scrollShowGuideText").checked = scroll.showGuideText !== false;
+  $("scrollGuideText").value = scroll.guideText || "투표해주세요!";
+  $("scrollGuideFrequency").value = scroll.guideFrequency || 5;
+  $("scrollSpeed").value = scroll.speed || 5;
+  updateScrollSettings();
+
   setTemplate(tpl);
 }
 
@@ -592,6 +652,14 @@ function buildConfig() {
       graphicMode: $("graphicMode").value === "image" ? "image" : "bar",
       imageFps: parseInt($("imageFps").value, 10) || 24,
       question: (template === "winner" ? $("q_winner") : $("q_best")).value.trim(),
+      scroll: {
+        enabled: $("scrollEnabled").checked,
+        showAuthor: $("scrollShowAuthor").checked,
+        showGuideText: $("scrollShowGuideText").checked,
+        guideText: $("scrollGuideText").value.trim() || "투표해주세요!",
+        guideFrequency: Math.max(1, parseInt($("scrollGuideFrequency").value, 10) || 5),
+        speed: Math.max(1, Math.min(10, parseInt($("scrollSpeed").value, 10) || 5)),
+      },
       teams: [],
     },
   };

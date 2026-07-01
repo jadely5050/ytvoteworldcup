@@ -17,6 +17,14 @@
     "graphicMode": "image",
     "imageFps": 5,
     "question": "이번 경기에서 제일 활약할 선수는?",
+    "scroll": {
+      "enabled": true,
+      "showAuthor": true,
+      "showGuideText": true,
+      "guideText": "투표해주세요!",
+      "guideFrequency": 5,
+      "speed": 5
+    },
     "teams": [
       {
         "key": "A",

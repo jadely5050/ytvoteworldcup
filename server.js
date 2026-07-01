@@ -47,6 +47,16 @@ function normalizeConfig(cfg) {
     if (cfg.poll.chatFilter !== "all" && cfg.poll.chatFilter !== "votedOnly") {
       cfg.poll.chatFilter = "votedOnly";
     }
+    // 스크롤 설정 기본값
+    const scroll = cfg.poll.scroll && typeof cfg.poll.scroll === "object" ? cfg.poll.scroll : {};
+    cfg.poll.scroll = {
+      enabled: scroll.enabled !== false,
+      showAuthor: scroll.showAuthor !== false,
+      showGuideText: scroll.showGuideText !== false,
+      guideText: String(scroll.guideText || "투표해주세요!"),
+      guideFrequency: Math.max(1, Math.round(Number(scroll.guideFrequency) || 5)),
+      speed: Math.max(1, Math.min(10, Math.round(Number(scroll.speed) || 5))),
+    };
   }
   return cfg;
 }
@@ -97,6 +107,8 @@ const rawCounts = new Map();
 let nativePoll = null; // 네이티브 설문 감지 시 { question, options:[{label,votes}], total }
 let onAir = false; // 송출 상태 (layout.html 그래픽 fade in/out)
 let tallying = true; // 집계 상태 (false 면 득표 집계 정지 = 투표 종료)
+const scrollQueue = []; // 스크롤에 표시할 항목 큐
+let scrollChatCount = 0; // 안내문 송출 빈도 카운터
 
 // ---------- vote aggregation ----------
 function teamByKey(key) {
@@ -238,7 +250,7 @@ function buildPollPayload() {
       };
     });
     // 질문: admin 질문이 있으면 우선, 비어 있으면 유튜브 설문 질문 사용
-    return {
+    const payload = {
       question: adminQuestion() || nativePoll.question || "",
       total,
       teams,
@@ -248,7 +260,12 @@ function buildPollPayload() {
       graphicMode,
       imageFps,
       source: "native",
+      scroll: {
+        queue: scrollQueue.splice(0, scrollQueue.length), // 큐 내용 추출 후 비우기
+        config: config.poll.scroll || {},
+      },
     };
+    return payload;
   }
 
   // keyword
@@ -268,7 +285,7 @@ function buildPollPayload() {
       boing: boingLevel(t),
     };
   });
-  return {
+  const payload = {
     question: adminQuestion(),
     total,
     teams,
@@ -278,7 +295,12 @@ function buildPollPayload() {
     graphicMode,
     imageFps,
     source: "keyword",
+    scroll: {
+      queue: scrollQueue.splice(0, scrollQueue.length), // 큐 내용 추출 후 비우기
+      config: config.poll.scroll || {},
+    },
   };
+  return payload;
 }
 
 /** 선택지 기본 색상 팔레트 (최대 5개) */
@@ -524,6 +546,23 @@ app.post("/admin/testchat", (req, res) => {
   const teamKey = countChatVote(channelId, text);
   const shown = shouldShowChat(text);
   if (shown) pushChat(author, text, isSuperchat, source);
+  // 투표가 집계되면 스크롤 큐에 추가
+  if (teamKey && config.poll.scroll && config.poll.scroll.enabled) {
+    scrollQueue.push({
+      type: "chat",
+      author: config.poll.scroll.showAuthor ? author : null,
+      text: text,
+      teamKey: teamKey,
+    });
+    scrollChatCount++;
+    if (config.poll.scroll.showGuideText && scrollChatCount >= config.poll.scroll.guideFrequency) {
+      scrollQueue.push({
+        type: "guide",
+        text: config.poll.scroll.guideText,
+      });
+      scrollChatCount = 0;
+    }
+  }
   res.json({ ok: true, counted: !!teamKey, teamKey: teamKey || null, shown });
 });
 
@@ -582,8 +621,26 @@ function pushChat(author, text, isSuperchat, source, meta) {
  */
 function ingestChat({ platform, channelId, author, text, isDonation, emojis, badges }) {
   const id = channelId ? `${platform}:${channelId}` : null;
-  countChatVote(id, text);
+  const teamKey = countChatVote(id, text);
   if (shouldShowChat(text)) pushChat(author, text, !!isDonation, platform, { emojis, badges });
+  // 투표가 집계되면 스크롤 큐에 추가
+  if (teamKey && config.poll.scroll && config.poll.scroll.enabled) {
+    scrollQueue.push({
+      type: "chat",
+      author: config.poll.scroll.showAuthor ? author : null,
+      text: text,
+      teamKey: teamKey,
+    });
+    scrollChatCount++;
+    // 안내문 빈도 확인
+    if (config.poll.scroll.showGuideText && scrollChatCount >= config.poll.scroll.guideFrequency) {
+      scrollQueue.push({
+        type: "guide",
+        text: config.poll.scroll.guideText,
+      });
+      scrollChatCount = 0;
+    }
+  }
 }
 
 /** YTText / runs / 문자열 → 평문 텍스트 */
