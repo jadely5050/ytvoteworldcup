@@ -208,16 +208,14 @@
     position: absolute; left: 0; right: 0; bottom: 0;
     height: 54px; overflow: hidden;
     background: rgba(10, 12, 16, 0.55);
-    display: flex; align-items: center;
   }
+  /* 위치는 JS(requestAnimationFrame)가 translateX 로 직접 제어한다(아래 스크립트 참고).
+     CSS @keyframes 로 애니메이션을 반복하면 콘텐츠가 늘 때마다 재시작해야 해서
+     새 채팅이 들어올 때마다 위치가 처음으로 되돌아가 버리는 문제가 있었다. */
   .scrollbar-track {
+    position: absolute; left: 0; top: 0; height: 100%;
     display: flex; align-items: center; white-space: nowrap;
     will-change: transform;
-    animation: scrollbar-move linear infinite;
-  }
-  @keyframes scrollbar-move {
-    from { transform: translateX(0); }
-    to   { transform: translateX(-50%); } /* 트랙 안 내용을 2벌 복제해서 -50% 지점이 이음매 없는 반복점 */
   }
   .scroll-chip {
     display: inline-flex; align-items: baseline; flex-shrink: 0;
@@ -642,13 +640,18 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-/* ---------- 하단 채팅 스크롤(마퀴) ---------- */
+/* ---------- 하단 채팅 스크롤(우→좌, JS 로 위치 직접 제어) ---------- */
 // admin 에서 설정한 값(enabled/showAuthor/showGuideText/guideText/guideFrequency/speed).
+// 이전엔 새 채팅마다 CSS 애니메이션을 재시작해 위치가 계속 처음으로 되돌아갔다.
+// 여기서는 requestAnimationFrame 으로 translateX 를 계속 누적시키고, 새 항목은
+// 트랙 뒤에 이어붙이기만 해서 현재 스크롤 위치를 절대 건드리지 않는다.
 let scrollCfg = { enabled: true, showAuthor: true, showGuideText: true, guideText: "투표해주세요!", guideFrequency: 5, speed: 5 };
-const SCROLL_MAX_ITEMS = 14; // 오래된 항목은 버려 DOM/애니메이션 폭주 방지
-let scrollBuffer = []; // { type:'chat'|'guide', author, text }
+const SCROLL_MAX_CHIPS = 60; // 하드 캡(비정상적으로 오래 안 지워질 경우 대비)
+const SCROLL_KEEP_CHIPS = 4; // 화면 밖으로 나가도 최소 이만큼은 남겨둠(빈 화면 방지)
 let scrollChatCounter = 0; // guideFrequency 개마다 안내문 1회 삽입
-let scrollFlushTimer = null;
+let scrollX = 0; // 트랙의 현재 translateX(px)
+let scrollLastT = null;
+let scrollRafId = null;
 
 function applyScrollConfig(cfg) {
   if (!cfg) return;
@@ -656,66 +659,94 @@ function applyScrollConfig(cfg) {
   scrollCfg = Object.assign({}, scrollCfg, cfg);
   $("scrollbar").style.display = scrollCfg.enabled ? "" : "none";
   if (!scrollCfg.enabled) {
-    scrollBuffer = [];
-    scrollChatCounter = 0;
-    $("scrollbarTrack").style.animation = "none";
+    stopScrollLoop();
     $("scrollbarTrack").innerHTML = "";
+    scrollChatCounter = 0;
   } else if (!wasEnabled) {
-    scheduleScrollFlush(true); // 방금 켜졌으면 즉시 반영
+    resetScrollPosition();
   }
 }
 
-// 이모티콘 토큰({:키:})은 하단 스크롤(작은 한 줄)에는 이미지 대신 텍스트만 남기고 제거.
-function scrollPlainText(text) {
-  return escapeHtml(String(text || "").replace(/\{:[^:}]+:\}/g, "").trim());
-}
-
-function scrollChipHtml(item) {
-  const cls = "scroll-chip" + (item.type === "guide" ? " guide" : "");
-  const nameHtml =
-    item.type === "chat" && scrollCfg.showAuthor && item.author
-      ? `<span class="scroll-name">${escapeHtml(item.author)}</span>`
-      : "";
-  return `<span class="${cls}">${nameHtml}<span class="scroll-text">${scrollPlainText(item.text)}</span></span>`;
+function makeScrollChip(item) {
+  const chip = document.createElement("span");
+  chip.className = "scroll-chip" + (item.type === "guide" ? " guide" : "");
+  if (item.type === "chat" && scrollCfg.showAuthor && item.author) {
+    const name = document.createElement("span");
+    name.className = "scroll-name";
+    name.textContent = item.author;
+    chip.appendChild(name);
+  }
+  const text = document.createElement("span");
+  text.className = "scroll-text";
+  // 이모티콘 토큰({:키:})은 하단 스크롤(작은 한 줄)에는 이미지 대신 텍스트만 남기고 제거.
+  text.textContent = String(item.text || "").replace(/\{:[^:}]+:\}/g, "").trim();
+  chip.appendChild(text);
+  return chip;
 }
 
 function addScrollItem(m) {
   if (!scrollCfg.enabled) return;
-  scrollBuffer.push({ type: "chat", author: m.author || "", text: m.text || "" });
-  if (scrollBuffer.length > SCROLL_MAX_ITEMS) scrollBuffer.shift();
+  appendScrollChip({ type: "chat", author: m.author || "", text: m.text || "" });
 
   scrollChatCounter++;
   if (scrollCfg.showGuideText && scrollChatCounter >= scrollCfg.guideFrequency) {
-    scrollBuffer.push({ type: "guide", text: scrollCfg.guideText || "" });
-    if (scrollBuffer.length > SCROLL_MAX_ITEMS) scrollBuffer.shift();
+    appendScrollChip({ type: "guide", text: scrollCfg.guideText || "" });
     scrollChatCounter = 0;
   }
-  scheduleScrollFlush(false);
 }
 
-// 채팅이 잦을 때 매번 애니메이션을 재시작하면 끊겨 보이므로 재구성을 코얼레싱(최대 2초 간격).
-function scheduleScrollFlush(immediate) {
-  if (immediate) { flushScrollTrack(); return; }
-  if (scrollFlushTimer) return;
-  scrollFlushTimer = setTimeout(() => { scrollFlushTimer = null; flushScrollTrack(); }, 2000);
-}
-
-function flushScrollTrack() {
+function appendScrollChip(item) {
   const track = $("scrollbarTrack");
-  if (!scrollCfg.enabled || scrollBuffer.length === 0) {
-    track.style.animation = "none";
-    track.innerHTML = "";
+  if (track.children.length === 0) resetScrollPosition(); // 비어 있던 상태에서 재개 시에만 위치 초기화
+  track.appendChild(makeScrollChip(item));
+  trimScrolledChips();
+  startScrollLoop();
+}
+
+// 화면 왼쪽으로 완전히 사라진 맨 앞 항목만 정리한다. 지운 폭만큼 x 를 보정하므로
+// 남은(특히 화면에 보이는) 항목들의 위치는 전혀 변하지 않아 시각적 점프가 없다.
+function trimScrolledChips() {
+  const track = $("scrollbarTrack");
+  while (track.children.length > SCROLL_KEEP_CHIPS) {
+    const first = track.children[0];
+    const w = first.getBoundingClientRect().width;
+    if (scrollX + w >= 0 && track.children.length <= SCROLL_MAX_CHIPS) break; // 아직 화면에 걸쳐 있으면 유지
+    track.removeChild(first);
+    scrollX += w;
+  }
+}
+
+function resetScrollPosition() {
+  scrollX = ($("scrollbar").clientWidth || window.innerWidth || 1920);
+  scrollLastT = null;
+}
+
+function startScrollLoop() {
+  if (scrollRafId != null) return;
+  scrollLastT = null;
+  scrollRafId = requestAnimationFrame(scrollTick);
+}
+function stopScrollLoop() {
+  if (scrollRafId != null) cancelAnimationFrame(scrollRafId);
+  scrollRafId = null;
+}
+
+function scrollTick(t) {
+  const track = $("scrollbarTrack");
+  if (!scrollCfg.enabled || track.children.length === 0) {
+    scrollRafId = null; // 보여줄 게 없으면 정지 — 다음 addScrollItem 이 재개
     return;
   }
-  const html = scrollBuffer.map(scrollChipHtml).join("");
-  track.innerHTML = html + html; // 콘텐츠 2벌 복제 → translateX(-50%) 지점이 이음매 없는 반복점
-  const halfWidth = track.scrollWidth / 2;
+  if (scrollLastT == null) scrollLastT = t;
+  const dt = (t - scrollLastT) / 1000;
+  scrollLastT = t;
+
   const speed = Math.max(1, Math.min(10, scrollCfg.speed || 5));
   const pxPerSec = 30 + (speed - 1) * 30; // 1(느림, 30px/s) ~ 10(빠름, 300px/s)
-  const duration = Math.max(4, halfWidth / pxPerSec);
-  track.style.animation = "none";
-  void track.offsetWidth; // 강제 리플로우 후 재시작
-  track.style.animation = `scrollbar-move ${duration}s linear infinite`;
+  scrollX -= pxPerSec * dt;
+  track.style.transform = `translateX(${scrollX}px)`;
+  trimScrolledChips();
+  scrollRafId = requestAnimationFrame(scrollTick);
 }
 
 // PGM 모드(?pgm=1): 송출(onair) 상태에 따라 그래픽 fade in/out. 그 외(PVW)는 항상 표시.
