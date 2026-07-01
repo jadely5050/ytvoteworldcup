@@ -200,6 +200,39 @@
 
   .disconnected { position: absolute; top: 12px; left: 12px; color:#e23b2e;
     font-size:14px; font-weight:700; display:none; }
+
+  /* 스크롤 */
+  .scroll-container {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 60px; background: rgba(0,0,0,.6); overflow: hidden;
+    border-top: 1px solid rgba(255,255,255,.1);
+  }
+  .scroll-track {
+    display: flex; align-items: center; height: 100%;
+    gap: 24px; padding: 0 20px; white-space: nowrap;
+    animation: scroll-move linear infinite;
+  }
+  @keyframes scroll-move {
+    0% { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+  }
+  .scroll-item {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 12px; background: rgba(255,255,255,.08);
+    border-radius: 6px; font-size: 14px; flex-shrink: 0;
+  }
+  .scroll-item.guide {
+    background: rgba(255,193,7,.2); color: #ffc107;
+  }
+  .scroll-item.chat {
+    color: #e7e9ee;
+  }
+  .scroll-item .author {
+    font-weight: 600; color: #5aa9ff; margin-right: 4px;
+  }
+  .scroll-item .text {
+    flex: 1; overflow: hidden; text-overflow: ellipsis;
+  }
 </style>
 </head>
 <body>
@@ -249,6 +282,10 @@
   <div class="chat" id="chatPanel" style="display:none">
     <div class="chat-head">CHAT <span>💬</span></div>
     <div class="chat-list" id="chatList"></div>
+  </div>
+
+  <div class="scroll-container" id="scrollContainer" style="display:none">
+    <div class="scroll-track" id="scrollTrack"></div>
   </div>
 </div>
 
@@ -309,6 +346,9 @@ function renderPoll(p) {
   if (p.graphicMode === "image" && p.template !== "winner") renderImageMode(teams, p);
   else if (teams.length <= 2) renderDuo(teams);
   else renderMulti(teams);
+
+  // 스크롤 처리
+  if (p.scroll) renderScroll(p.scroll);
 }
 
 function renderDuo(teams) {
@@ -604,6 +644,60 @@ function addChat(m) {
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+let scrollAnimationDuration = 10; // 초 단위, speed에서 계산됨
+let currentScrollItems = [];
+
+function renderScroll(scrollData) {
+  const { queue = [], config = {} } = scrollData;
+  const enabled = config.enabled !== false;
+  const container = $("scrollContainer");
+  const track = $("scrollTrack");
+
+  if (!enabled || !queue || queue.length === 0) {
+    container.style.display = "none";
+    return;
+  }
+
+  // 애니메이션 속도 계산: speed 1~10 → 20초~5초
+  const speed = Math.max(1, Math.min(10, config.speed || 5));
+  scrollAnimationDuration = 20 - (speed - 1) * 1.67; // 20s(speed=1) ~ 5s(speed=10)
+
+  // 새로운 아이템 렌더링
+  track.innerHTML = "";
+  queue.forEach((item) => {
+    const div = document.createElement("div");
+    div.className = "scroll-item " + (item.type === "guide" ? "guide" : "chat");
+
+    if (item.type === "chat") {
+      if (item.author) {
+        const author = document.createElement("span");
+        author.className = "author";
+        author.textContent = item.author;
+        div.appendChild(author);
+      }
+      const text = document.createElement("span");
+      text.className = "text";
+      text.textContent = item.text;
+      div.appendChild(text);
+    } else {
+      // guide
+      const text = document.createElement("span");
+      text.className = "text";
+      text.textContent = item.text;
+      div.appendChild(text);
+    }
+
+    track.appendChild(div);
+  });
+
+  // 애니메이션 적용 (이전 애니메이션 제거 후 재시작)
+  track.style.animation = "none";
+  void track.offsetHeight; // 리플로우 강제
+  track.style.animation = `scroll-move ${scrollAnimationDuration}s linear infinite`;
+
+  container.style.display = "";
 }
 
 // PGM 모드(?pgm=1): 송출(onair) 상태에 따라 그래픽 fade in/out. 그 외(PVW)는 항상 표시.
