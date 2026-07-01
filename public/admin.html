@@ -362,6 +362,7 @@
   <div class="airbar">
     <span id="airmsg" style="font-size:13px;color:#9aa0ac"></span>
     <button id="tally" class="tally on">■ 집계 종료</button>
+    <button id="scrollToggle" class="tally on">📜 자막 스크롤 정지</button>
     <button id="onair" class="onair off">● 송출 시작</button>
   </div>
 </div><!-- /right -->
@@ -728,6 +729,7 @@ async function save() {
       setMsg("✔ " + data.message + (data.videoId ? " (videoId: " + data.videoId + ")" : ""), "ok");
       $("videoUrl").value = data.videoId || cfg.videoId; updateVidPreview();
       loadedConfig = cfg; // 이후 저장 비교 기준 갱신
+      refreshScrollToggle(); // 저장 시 서버가 스크롤 런타임 토글을 설정값으로 재동기화 → 버튼도 맞춤
       return true;
     }
     const errMsg = data.error || "저장 실패";
@@ -945,9 +947,34 @@ $("tally").addEventListener("click", async () => {
   finally { $("tally").disabled = false; }
 });
 
+// ---------- 자막 스크롤 (설정 저장 없이 방송 중 즉시 on/off) ----------
+let scrollOn = true;
+function setScrollToggleUI(on) {
+  scrollOn = on;
+  const b = $("scrollToggle");
+  b.classList.toggle("on", on);
+  b.classList.toggle("off", !on);
+  b.textContent = on ? "📜 자막 스크롤 정지" : "📜 자막 스크롤 시작";
+}
+async function refreshScrollToggle() {
+  try { const r = await fetch("/admin/scroll"); setScrollToggleUI((await r.json()).on); } catch {}
+}
+$("scrollToggle").addEventListener("click", async () => {
+  $("scrollToggle").disabled = true;
+  try {
+    const r = await fetch("/admin/scroll", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ on: !scrollOn }),
+    });
+    setScrollToggleUI((await r.json()).on);
+  } catch (e) { $("airmsg").textContent = "자막 스크롤 토글 실패: " + e.message; }
+  finally { $("scrollToggle").disabled = false; }
+});
+
 load();
 refreshOnair();
 refreshTally();
+refreshScrollToggle();
 </script>
 </body>
 </html>

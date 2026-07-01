@@ -664,6 +664,8 @@ function applyScrollConfig(cfg) {
     scrollChatCounter = 0;
   } else if (!wasEnabled) {
     resetScrollPosition();
+    // 방금 켜졌으면 최대 8초(유휴 하트비트 주기) 기다리지 않고 바로 하나 띄운다.
+    if (scrollCfg.showGuideText) appendScrollChip({ type: "guide", text: scrollCfg.guideText || "" });
   }
 }
 
@@ -695,21 +697,38 @@ function addScrollItem(m) {
   }
 }
 
+// 채팅이 뜸해 트랙이 완전히 비면(모든 항목이 지나감) 화면이 계속 공백으로 남으므로,
+// 유휴 상태에서는 안내문을 주기적으로 재삽입해 채운다. 실제 채팅이 다시 들어오면
+// addScrollItem 이 그대로 이어붙이므로 이 하트비트와 충돌하지 않는다.
+const IDLE_GUIDE_HEARTBEAT_MS = 8000;
+setInterval(() => {
+  if (!scrollCfg.enabled || !scrollCfg.showGuideText) return;
+  const track = $("scrollbarTrack");
+  if (track.children.length === 0) {
+    appendScrollChip({ type: "guide", text: scrollCfg.guideText || "" });
+  }
+}, IDLE_GUIDE_HEARTBEAT_MS);
+
 function appendScrollChip(item) {
   const track = $("scrollbarTrack");
   if (track.children.length === 0) resetScrollPosition(); // 비어 있던 상태에서 재개 시에만 위치 초기화
-  track.appendChild(makeScrollChip(item));
+  const chip = makeScrollChip(item);
+  track.appendChild(chip);
+  // 폭은 추가 시 1회만 측정해 캐시(매 프레임 강제 리플로우 방지 — 속도가 빠를수록
+  // trimScrolledChips 호출 빈도가 늘어 이 리플로우 비용이 튐 현상의 원인 중 하나였다).
+  chip._w = chip.getBoundingClientRect().width;
   trimScrolledChips();
   startScrollLoop();
 }
 
 // 화면 왼쪽으로 완전히 사라진 맨 앞 항목만 정리한다. 지운 폭만큼 x 를 보정하므로
 // 남은(특히 화면에 보이는) 항목들의 위치는 전혀 변하지 않아 시각적 점프가 없다.
+// scrollTick 에서 transform 적용 "전"에 호출해야 보정된 값이 그대로 화면에 반영된다.
 function trimScrolledChips() {
   const track = $("scrollbarTrack");
   while (track.children.length > SCROLL_KEEP_CHIPS) {
     const first = track.children[0];
-    const w = first.getBoundingClientRect().width;
+    const w = first._w != null ? first._w : first.getBoundingClientRect().width;
     if (scrollX + w >= 0 && track.children.length <= SCROLL_MAX_CHIPS) break; // 아직 화면에 걸쳐 있으면 유지
     track.removeChild(first);
     scrollX += w;
@@ -738,14 +757,18 @@ function scrollTick(t) {
     return;
   }
   if (scrollLastT == null) scrollLastT = t;
-  const dt = (t - scrollLastT) / 1000;
+  // 프레임이 잠깐 지연(탭 전환/GC 등)되면 dt 가 커져 한 프레임에 크게 튀므로 상한을 둔다.
+  const dt = Math.min((t - scrollLastT) / 1000, 0.05);
   scrollLastT = t;
 
   const speed = Math.max(1, Math.min(10, scrollCfg.speed || 5));
   const pxPerSec = 30 + (speed - 1) * 30; // 1(느림, 30px/s) ~ 10(빠름, 300px/s)
   scrollX -= pxPerSec * dt;
-  track.style.transform = `translateX(${scrollX}px)`;
+  // trim(위치 보정)을 먼저 끝내고 나서 transform 을 적용해야 한다. 순서가 반대이면
+  // "보정 전" 위치가 한 프레임 그려진 뒤에야 보정되어, 매 트림마다 화면이 훅 튀어
+  // 보였다(항목이 자주 화면 밖으로 빠지는 고속에서 특히 두드러짐).
   trimScrolledChips();
+  track.style.transform = `translateX(${scrollX}px)`;
   scrollRafId = requestAnimationFrame(scrollTick);
 }
 

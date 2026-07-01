@@ -107,6 +107,9 @@ const rawCounts = new Map();
 let nativePoll = null; // 네이티브 설문 감지 시 { question, options:[{label,votes}], total }
 let onAir = false; // 송출 상태 (layout.html 그래픽 fade in/out)
 let tallying = true; // 집계 상태 (false 면 득표 집계 정지 = 투표 종료)
+// 자막 스크롤 런타임 on/off (tally/onair 와 동일한 패턴). 설정 저장(poll.scroll.enabled)과
+// 별개로 방송 중 즉시 켜고 끌 수 있게 분리한 값. 초기값/설정 저장 시에는 config 값을 따른다.
+let scrollOn = config.poll.scroll.enabled !== false;
 
 // ---------- vote aggregation ----------
 function teamByKey(key) {
@@ -222,6 +225,11 @@ function boingLevel(t) {
   return n >= 1 && n <= 5 ? n : 3;
 }
 
+/** 하단 스크롤 설정 payload. enabled 는 저장된 설정이 아니라 런타임 토글(scrollOn)이 우선한다. */
+function scrollPayload() {
+  return Object.assign({}, config.poll.scroll, { enabled: scrollOn });
+}
+
 function buildPollPayload() {
   const useNative =
     (config.poll.mode === "native" || config.poll.mode === "auto") && nativePoll;
@@ -258,7 +266,7 @@ function buildPollPayload() {
       graphicMode,
       imageFps,
       source: "native",
-      scroll: config.poll.scroll,
+      scroll: scrollPayload(),
     };
   }
 
@@ -289,7 +297,7 @@ function buildPollPayload() {
     graphicMode,
     imageFps,
     source: "keyword",
-    scroll: config.poll.scroll,
+    scroll: scrollPayload(),
   };
 }
 
@@ -542,6 +550,15 @@ app.post("/admin/tally", (req, res) => {
   pushPoll();
   console.log(`[tally] ${tallying ? "ON (집계 시작)" : "OFF (집계 종료)"}`);
   res.json({ ok: true, on: tallying });
+});
+
+// admin: 하단 자막 스크롤 상태 조회 / 토글 (설정 저장 없이 방송 중 즉시 on/off — tally/onair 와 동일 패턴)
+app.get("/admin/scroll", (_req, res) => res.json({ on: scrollOn }));
+app.post("/admin/scroll", (req, res) => {
+  scrollOn = !!(req.body && req.body.on);
+  pushPoll();
+  console.log(`[scroll] ${scrollOn ? "ON (자막 스크롤 시작)" : "OFF (자막 스크롤 정지)"}`);
+  res.json({ ok: true, on: scrollOn });
 });
 
 // admin: 테스트 채팅 주입 (YouTube 없이 집계 테스트). test.html 에서 사용.
@@ -877,6 +894,7 @@ function resetStats() {
 function restartFromConfig(newConfig, keepStats) {
   stopSources();
   config = normalizeConfig(newConfig);
+  scrollOn = config.poll.scroll.enabled !== false; // 설정 저장 시 스크롤 런타임 토글도 저장값으로 재동기화
   if (!keepStats) resetStats();
   pushPoll();
   startSources();
