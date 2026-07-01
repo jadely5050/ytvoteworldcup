@@ -675,10 +675,24 @@ async function save() {
       loadedConfig = cfg; // 이후 저장 비교 기준 갱신
       return true;
     }
-    setMsg("✖ " + (data.error || "저장 실패"), "err");
+    const errMsg = data.error || "저장 실패";
+    setMsg("✖ " + errMsg, "err");
+    // 오류 로그 기록
+    await fetch("/admin/log-error", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ error: errMsg }),
+    }).catch(() => {});
     return false;
   } catch (e) {
-    setMsg("요청 실패: " + e.message, "err");
+    const errMsg = "요청 실패: " + e.message;
+    setMsg(errMsg, "err");
+    // 오류 로그 기록
+    await fetch("/admin/log-error", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ error: e.message, errorCode: e.code || "" }),
+    }).catch(() => {});
     return false;
   } finally {
     saveBtn.disabled = false;
