@@ -393,7 +393,38 @@ app.post("/admin/onair", (req, res) => {
 });
 
 // admin: config 저장 + 재시작. body = { text: "<json 문자열>" }
-app.post("/admin/save", (req, res) => {
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * JSON 파일을 동기화(구글드라이브/원드라이브)·백신의 일시적 파일 잠금에 강하게 저장.
+ *  - 임시파일에 먼저 쓰고 원자적 rename 으로 교체(부분 쓰기 방지, 잠금에 더 강함)
+ *  - EPERM/EBUSY/EACCES(일시 잠금)면 잠깐 쉬었다 재시도
+ * 실패 시 마지막 에러를 throw. 각 시도는 콘솔에 로깅(원인 추적용).
+ */
+async function saveJsonResilient(filePath, obj) {
+  const data = JSON.stringify(obj, null, 2) + "\n";
+  const tmp = filePath + ".tmp";
+  let lastErr;
+  for (let i = 0; i < 6; i++) {
+    try {
+      fs.writeFileSync(tmp, data, "utf8");
+      fs.renameSync(tmp, filePath); // 원자적 교체
+      if (i > 0) console.log(`[save] ${i + 1}번째 시도에서 저장 성공`);
+      return;
+    } catch (e) {
+      lastErr = e;
+      try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch {}
+      console.error(`[save] config.json 저장 시도 ${i + 1} 실패 (${e.code || "?"}): ${e.message}`);
+      const transient = ["EPERM", "EBUSY", "EACCES", "EEXIST"].includes(e.code);
+      if (!transient) break; // 권한/경로 자체 문제면 재시도 무의미
+      await sleep(150 * (i + 1)); // 점점 길게: 0.15→0.3→…→0.9초
+    }
+  }
+  throw lastErr;
+}
+
+app.post("/admin/save", async (req, res) => {
   const text = req.body && typeof req.body.text === "string" ? req.body.text : null;
   if (text == null) return res.status(400).json({ ok: false, error: "text 필드가 필요합니다." });
 
@@ -414,9 +445,16 @@ app.post("/admin/save", (req, res) => {
   normalizeConfig(parsed); // sources 토글 기본값 보정
 
   try {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(parsed, null, 2) + "\n", "utf8");
+    await saveJsonResilient(CONFIG_PATH, parsed);
   } catch (e) {
-    return res.status(500).json({ ok: false, error: "파일 저장 실패: " + e.message });
+    const code = e.code ? e.code + " " : "";
+    const locked = ["EPERM", "EBUSY", "EACCES"].includes(e.code);
+    return res.status(500).json({
+      ok: false,
+      error:
+        "파일 저장 실패: " + code + e.message +
+        (locked ? " — config.json 이 잠겨 있습니다(구글드라이브/원드라이브 동기화·백신 가능). 동기화 안 되는 로컬 폴더에서 실행하세요." : ""),
+    });
   }
 
   // 투표 이름이 있으면 프리셋으로도 저장(업서트)
@@ -550,8 +588,22 @@ function broadcast(type, data) {
     if (client.readyState === 1) client.send(msg);
   }
 }
-function pushPoll() {
+
+// poll 갱신 코얼레싱: 득표가 폭주해도 화면 갱신은 ≈6~7Hz 로 묶는다.
+// (집계 자체는 즉시. 표시/브로드캐스트만 트레일링 디바운스로 합침.)
+const POLL_THROTTLE_MS = 150;
+let pollDirty = false;
+let pollTimer = null;
+function flushPoll() {
+  pollTimer = null;
+  if (!pollDirty) return;
+  pollDirty = false;
   broadcast("poll", buildPollPayload());
+}
+function pushPoll() {
+  pollDirty = true;
+  if (pollTimer) return; // 이미 예약됨 → 만료 시 최신 상태 1회 전송
+  pollTimer = setTimeout(flushPoll, POLL_THROTTLE_MS);
 }
 
 wss.on("connection", (ws) => {

@@ -827,6 +827,26 @@ document.querySelectorAll(".screen").forEach((s) => ro.observe(s));
 window.addEventListener("resize", scaleScreens);
 scaleScreens();
 
+// ---------- 미리보기 절전 ----------
+// PGM/PVW iframe 은 각각 1920x1080 풀 그래픽을 상시 렌더 → 노트북 발열 주범.
+// 탭이 백그라운드(다른 탭/최소화)면 자동으로 iframe 을 내려 렌더 정지, 복귀 시 복원.
+// (수동 토글은 실수로 미리보기를 꺼버릴 수 있어 두지 않음 — 자동 절전만.)
+const PREV = [
+  { f: $("pgmFrame"), src: "/layout.html" },
+  { f: $("pvwFrame"), src: "/overlay.html" },
+];
+function refreshPreview() {
+  const show = !document.hidden;
+  for (const p of PREV) {
+    const want = show ? p.src : "about:blank";
+    // src 가 이미 원하는 상태면 재로딩(=WS 재연결) 방지
+    if ((p.f.getAttribute("src") || "") !== want) p.f.setAttribute("src", want);
+  }
+  if (show) setTimeout(scaleScreens, 50);
+}
+document.addEventListener("visibilitychange", refreshPreview);
+refreshPreview();
+
 // ---------- 송출 (on-air) ----------
 let onair = false;
 function setOnairUI(on) {
