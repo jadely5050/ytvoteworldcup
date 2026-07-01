@@ -204,12 +204,13 @@
   /* 스크롤 */
   .scroll-container {
     position: absolute; bottom: 0; left: 0; right: 0;
-    height: 90px; background: rgba(0,0,0,.7); overflow: hidden;
-    border-top: 2px solid rgba(255,255,255,.15);
+    height: 40px; background: rgba(0,0,0,.5); overflow: hidden;
+    border-top: 1px solid rgba(255,255,255,.1);
+    display: flex; align-items: center;
   }
   .scroll-track {
     display: flex; align-items: center; height: 100%;
-    gap: 20px; padding: 0 24px; white-space: nowrap;
+    gap: 16px; padding: 0 20px; white-space: nowrap;
     animation: scroll-move linear infinite;
   }
   @keyframes scroll-move {
@@ -217,26 +218,25 @@
     100% { transform: translateX(-100%); }
   }
   .scroll-item {
-    display: inline-flex; align-items: center; gap: 8px;
+    display: inline-flex; align-items: center; gap: 6px;
     padding: 0; background: transparent;
-    border-radius: 0; font-size: 14px; flex-shrink: 0; line-height: 1;
-    color: #e7e9ee;
+    font-size: 13px; flex-shrink: 0; line-height: 1;
+    color: #d0d5dd;
   }
   .scroll-item.guide {
-    background: transparent; color: #ffc107; font-weight: 600;
-    font-size: 15px;
+    color: #ffc107; font-weight: 700; font-size: 13px;
   }
   .scroll-item.chat {
-    background: transparent; color: #d0d5dd; font-weight: 400;
+    color: #d0d5dd;
   }
   .scroll-item .author {
-    font-weight: 600; color: #60a5fa; margin-right: 0; white-space: nowrap;
+    font-weight: 600; color: #60a5fa; white-space: nowrap;
   }
   .scroll-item .author::after {
-    content: " |"; margin-right: 6px;
+    content: " |"; margin: 0 4px;
   }
   .scroll-item .text {
-    max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
 </style>
 </head>
