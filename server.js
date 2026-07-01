@@ -547,13 +547,12 @@ app.post("/admin/testchat", (req, res) => {
   const teamKey = countChatVote(channelId, text);
   const shown = shouldShowChat(text);
   if (shown) pushChat(author, text, isSuperchat, source);
-  // 투표가 집계되면 스크롤 큐에 추가
-  if (teamKey && config.poll.scroll && config.poll.scroll.enabled) {
+  // 채팅이 표시되면 스크롤 큐에 추가 (투표 여부 무관)
+  if (shown && config.poll.scroll && config.poll.scroll.enabled) {
     scrollQueue.push({
       type: "chat",
       author: config.poll.scroll.showAuthor ? author : null,
       text: text,
-      teamKey: teamKey,
     });
     if (scrollQueue.length > SCROLL_QUEUE_MAX) scrollQueue.shift();
     scrollChatCount++;
@@ -625,14 +624,14 @@ function pushChat(author, text, isSuperchat, source, meta) {
 function ingestChat({ platform, channelId, author, text, isDonation, emojis, badges }) {
   const id = channelId ? `${platform}:${channelId}` : null;
   const teamKey = countChatVote(id, text);
-  if (shouldShowChat(text)) pushChat(author, text, !!isDonation, platform, { emojis, badges });
-  // 투표가 집계되면 스크롤 큐에 추가
-  if (teamKey && config.poll.scroll && config.poll.scroll.enabled) {
+  const shown = shouldShowChat(text);
+  if (shown) pushChat(author, text, !!isDonation, platform, { emojis, badges });
+  // 채팅이 표시되면 스크롤 큐에 추가 (투표 여부 무관)
+  if (shown && config.poll.scroll && config.poll.scroll.enabled) {
     scrollQueue.push({
       type: "chat",
       author: config.poll.scroll.showAuthor ? author : null,
       text: text,
-      teamKey: teamKey,
     });
     if (scrollQueue.length > SCROLL_QUEUE_MAX) scrollQueue.shift();
     scrollChatCount++;
