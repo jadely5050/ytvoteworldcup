@@ -201,43 +201,31 @@
   .disconnected { position: absolute; top: 12px; left: 12px; color:#e23b2e;
     font-size:14px; font-weight:700; display:none; }
 
-  /* 스크롤 */
-  .scroll-container {
-    position: absolute; bottom: 0; left: 0; right: 0;
-    height: 40px; background: rgba(0,0,0,.5); overflow: hidden;
-    border-top: 1px solid rgba(255,255,255,.1);
+  /* ---------- 하단 채팅 스크롤(우→좌 마퀴) ---------- */
+  /* 우측 채팅 패널과 동일한 내용을 얇은 가로 바로 흘려보낸다. 클래스명은
+     .chat / .chat-msg 등 기존 채팅 패널 선택자와 절대 겹치지 않게 별도 네이밍(scroll-*) 사용. */
+  .scrollbar {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: 54px; overflow: hidden;
+    background: rgba(10, 12, 16, 0.55);
     display: flex; align-items: center;
   }
-  .scroll-track {
-    display: flex; align-items: center; height: 100%;
-    gap: 16px; padding: 0 20px; white-space: nowrap;
-    animation: scroll-move linear infinite;
+  .scrollbar-track {
+    display: flex; align-items: center; white-space: nowrap;
+    will-change: transform;
+    animation: scrollbar-move linear infinite;
   }
-  @keyframes scroll-move {
-    0% { transform: translateX(100%); }
-    100% { transform: translateX(-100%); }
+  @keyframes scrollbar-move {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); } /* 트랙 안 내용을 2벌 복제해서 -50% 지점이 이음매 없는 반복점 */
   }
-  .scroll-item {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 0; background: transparent;
-    font-size: 13px; flex-shrink: 0; line-height: 1;
-    color: #d0d5dd;
+  .scroll-chip {
+    display: inline-flex; align-items: baseline; flex-shrink: 0;
+    font-size: 22px; line-height: 1; padding: 0 34px;
   }
-  .scroll-item.guide {
-    color: #ffc107; font-weight: 700; font-size: 13px;
-  }
-  .scroll-item.chat {
-    color: #d0d5dd;
-  }
-  .scroll-item .author {
-    font-weight: 600; color: #60a5fa; white-space: nowrap;
-  }
-  .scroll-item .author::after {
-    content: " |"; margin: 0 4px;
-  }
-  .scroll-item .text {
-    max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
+  .scroll-chip .scroll-name { font-weight: 700; color: #6fb1ff; margin-right: 8px; }
+  .scroll-chip .scroll-text { color: #f2f4f8; }
+  .scroll-chip.guide .scroll-text { color: #ffd45a; font-weight: 800; }
 </style>
 </head>
 <body>
@@ -289,8 +277,8 @@
     <div class="chat-list" id="chatList"></div>
   </div>
 
-  <div class="scroll-container" id="scrollContainer" style="display:none">
-    <div class="scroll-track" id="scrollTrack"></div>
+  <div class="scrollbar" id="scrollbar" style="display:none">
+    <div class="scrollbar-track" id="scrollbarTrack"></div>
   </div>
 </div>
 
@@ -342,6 +330,9 @@ function renderPoll(p) {
   // 채팅창 표시 토글
   $("chatPanel").style.display = p.showChat ? "" : "none";
 
+  // 하단 스크롤 설정 반영(내용은 addChat 에서 이미 우측 채팅과 동일하게 누적됨)
+  applyScrollConfig(p.scroll);
+
   // 집계 종료 시 배지 변경
   $("badge").textContent = p.closed ? "투표 종료" : "LIVE POLL";
   $("badge").classList.toggle("closed", !!p.closed);
@@ -351,9 +342,6 @@ function renderPoll(p) {
   if (p.graphicMode === "image" && p.template !== "winner") renderImageMode(teams, p);
   else if (teams.length <= 2) renderDuo(teams);
   else renderMulti(teams);
-
-  // 스크롤 처리
-  if (p.scroll) renderScroll(p.scroll);
 }
 
 function renderDuo(teams) {
@@ -644,6 +632,9 @@ function addChat(m) {
     renderChatText(m.text, m.emojis);
   list.appendChild(div);
   while (list.children.length > maxChat) list.removeChild(list.firstChild);
+
+  // 우측 채팅 패널에 표시되는 것과 동일한 채팅을 하단 스크롤에도 그대로 흘려보낸다.
+  addScrollItem(m);
 }
 
 function escapeHtml(s) {
@@ -651,61 +642,80 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-let scrollAnimationDuration = 10; // 초 단위, speed에서 계산됨
-let currentScrollItems = [];
+/* ---------- 하단 채팅 스크롤(마퀴) ---------- */
+// admin 에서 설정한 값(enabled/showAuthor/showGuideText/guideText/guideFrequency/speed).
+let scrollCfg = { enabled: true, showAuthor: true, showGuideText: true, guideText: "투표해주세요!", guideFrequency: 5, speed: 5 };
+const SCROLL_MAX_ITEMS = 14; // 오래된 항목은 버려 DOM/애니메이션 폭주 방지
+let scrollBuffer = []; // { type:'chat'|'guide', author, text }
+let scrollChatCounter = 0; // guideFrequency 개마다 안내문 1회 삽입
+let scrollFlushTimer = null;
 
-function renderScroll(scrollData) {
-  const { queue = [], config = {} } = scrollData;
-  const enabled = config.enabled !== false;
-  const container = $("scrollContainer");
-  const track = $("scrollTrack");
+function applyScrollConfig(cfg) {
+  if (!cfg) return;
+  const wasEnabled = scrollCfg.enabled;
+  scrollCfg = Object.assign({}, scrollCfg, cfg);
+  $("scrollbar").style.display = scrollCfg.enabled ? "" : "none";
+  if (!scrollCfg.enabled) {
+    scrollBuffer = [];
+    scrollChatCounter = 0;
+    $("scrollbarTrack").style.animation = "none";
+    $("scrollbarTrack").innerHTML = "";
+  } else if (!wasEnabled) {
+    scheduleScrollFlush(true); // 방금 켜졌으면 즉시 반영
+  }
+}
 
-  if (!enabled || !queue || queue.length === 0) {
-    container.style.display = "none";
+// 이모티콘 토큰({:키:})은 하단 스크롤(작은 한 줄)에는 이미지 대신 텍스트만 남기고 제거.
+function scrollPlainText(text) {
+  return escapeHtml(String(text || "").replace(/\{:[^:}]+:\}/g, "").trim());
+}
+
+function scrollChipHtml(item) {
+  const cls = "scroll-chip" + (item.type === "guide" ? " guide" : "");
+  const nameHtml =
+    item.type === "chat" && scrollCfg.showAuthor && item.author
+      ? `<span class="scroll-name">${escapeHtml(item.author)}</span>`
+      : "";
+  return `<span class="${cls}">${nameHtml}<span class="scroll-text">${scrollPlainText(item.text)}</span></span>`;
+}
+
+function addScrollItem(m) {
+  if (!scrollCfg.enabled) return;
+  scrollBuffer.push({ type: "chat", author: m.author || "", text: m.text || "" });
+  if (scrollBuffer.length > SCROLL_MAX_ITEMS) scrollBuffer.shift();
+
+  scrollChatCounter++;
+  if (scrollCfg.showGuideText && scrollChatCounter >= scrollCfg.guideFrequency) {
+    scrollBuffer.push({ type: "guide", text: scrollCfg.guideText || "" });
+    if (scrollBuffer.length > SCROLL_MAX_ITEMS) scrollBuffer.shift();
+    scrollChatCounter = 0;
+  }
+  scheduleScrollFlush(false);
+}
+
+// 채팅이 잦을 때 매번 애니메이션을 재시작하면 끊겨 보이므로 재구성을 코얼레싱(최대 2초 간격).
+function scheduleScrollFlush(immediate) {
+  if (immediate) { flushScrollTrack(); return; }
+  if (scrollFlushTimer) return;
+  scrollFlushTimer = setTimeout(() => { scrollFlushTimer = null; flushScrollTrack(); }, 2000);
+}
+
+function flushScrollTrack() {
+  const track = $("scrollbarTrack");
+  if (!scrollCfg.enabled || scrollBuffer.length === 0) {
+    track.style.animation = "none";
+    track.innerHTML = "";
     return;
   }
-
-  // 애니메이션 속도 계산: speed 1~10 → 20초~5초
-  const speed = Math.max(1, Math.min(10, config.speed || 5));
-  scrollAnimationDuration = 20 - (speed - 1) * 1.67; // 20s(speed=1) ~ 5s(speed=10)
-
-  // 새로운 아이템 렌더링 (항목을 3회 반복해서 무한 스크롤 효과)
-  track.innerHTML = "";
-  const repeatCount = Math.max(3, Math.ceil(100 / (queue.length || 1))); // 최소 3회
-  for (let rep = 0; rep < repeatCount; rep++) {
-    queue.forEach((item) => {
-      const div = document.createElement("div");
-      div.className = "scroll-item " + (item.type === "guide" ? "guide" : "chat");
-
-      if (item.type === "chat") {
-        if (item.author) {
-          const author = document.createElement("span");
-          author.className = "author";
-          author.textContent = item.author;
-          div.appendChild(author);
-        }
-        const text = document.createElement("span");
-        text.className = "text";
-        text.textContent = item.text;
-        div.appendChild(text);
-      } else {
-        // guide
-        const text = document.createElement("span");
-        text.className = "text";
-        text.textContent = item.text;
-        div.appendChild(text);
-      }
-
-      track.appendChild(div);
-    });
-  }
-
-  // 애니메이션 적용 (이전 애니메이션 제거 후 재시작)
+  const html = scrollBuffer.map(scrollChipHtml).join("");
+  track.innerHTML = html + html; // 콘텐츠 2벌 복제 → translateX(-50%) 지점이 이음매 없는 반복점
+  const halfWidth = track.scrollWidth / 2;
+  const speed = Math.max(1, Math.min(10, scrollCfg.speed || 5));
+  const pxPerSec = 30 + (speed - 1) * 30; // 1(느림, 30px/s) ~ 10(빠름, 300px/s)
+  const duration = Math.max(4, halfWidth / pxPerSec);
   track.style.animation = "none";
-  void track.offsetHeight; // 리플로우 강제
-  track.style.animation = `scroll-move ${scrollAnimationDuration}s linear infinite`;
-
-  container.style.display = "";
+  void track.offsetWidth; // 강제 리플로우 후 재시작
+  track.style.animation = `scrollbar-move ${duration}s linear infinite`;
 }
 
 // PGM 모드(?pgm=1): 송출(onair) 상태에 따라 그래픽 fade in/out. 그 외(PVW)는 항상 표시.

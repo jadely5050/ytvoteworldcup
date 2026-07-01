@@ -309,39 +309,31 @@
     </div>
   </div>
 
-  <!-- 스크롤 설정 -->
   <div class="card">
-    <h2>스크롤</h2>
+    <h2>하단 채팅 스크롤</h2>
     <div class="field">
-      <label class="switch">
-        <input type="checkbox" id="scrollEnabled" checked />
-        스크롤 송출
-      </label>
+      <label class="switch"><input type="checkbox" id="scrollEnabled" checked /> 스크롤 송출 <span class="tip">전체 켜기/끄기</span></label>
     </div>
-    <div id="scrollSettings">
-      <div class="field">
-        <label class="switch">
-          <input type="checkbox" id="scrollShowAuthor" checked />
-          작성자 표시
-        </label>
+    <div id="scrollSubFields">
+      <div class="grid2">
+        <div class="field">
+          <label class="switch"><input type="checkbox" id="scrollShowAuthor" checked /> 작성자 표시</label>
+        </div>
+        <div class="field">
+          <label class="switch"><input type="checkbox" id="scrollShowGuideText" checked /> 투표 안내문 표시</label>
+        </div>
       </div>
       <div class="field">
-        <label class="switch">
-          <input type="checkbox" id="scrollShowGuideText" checked />
-          투표 안내문 표시
-        </label>
-      </div>
-      <div class="field" id="guideTextField">
-        <label>투표 안내문 내용</label>
-        <input type="text" id="scrollGuideText" placeholder="투표해주세요!" value="투표해주세요!" />
+        <label>투표 안내문 문구</label>
+        <input type="text" id="scrollGuideText" placeholder="투표해주세요!" />
       </div>
       <div class="grid2">
         <div class="field">
-          <label>안내문 송출 빈도 <span class="tip">채팅 개수</span></label>
-          <input type="number" id="scrollGuideFrequency" value="5" min="1" max="50" />
+          <label>안내문 송출 빈도 <span class="tip">채팅 몇 개마다 1회</span></label>
+          <input type="number" id="scrollGuideFrequency" value="5" min="1" max="99" />
         </div>
         <div class="field">
-          <label>스크롤 속도 <span class="tip">1(느림) ~ 10(빠름)</span></label>
+          <label>스크롤 속도 <span class="tip">1(느림)~10(빠름)</span></label>
           <input type="number" id="scrollSpeed" value="5" min="1" max="10" />
         </div>
       </div>
@@ -545,16 +537,12 @@ async function uploadChoiceImage(div, input) {
   }
 }
 
-// 스크롤 활성화 여부에 따라 설정 UI 표시 토글
-function updateScrollSettings() {
-  const enabled = $("scrollEnabled").checked;
-  $("scrollSettings").style.opacity = enabled ? "1" : "0.5";
-  $("scrollSettings").style.pointerEvents = enabled ? "auto" : "none";
-  const showGuide = $("scrollShowGuideText").checked;
-  $("guideTextField").style.display = showGuide ? "" : "none";
+// 스크롤 송출 껐을 때 하위 옵션 흐리게(입력은 막지 않음 — 저장은 여전히 값 유지)
+function applyScrollUI() {
+  const on = $("scrollEnabled").checked;
+  $("scrollSubFields").style.opacity = on ? "1" : ".4";
 }
-$("scrollEnabled").addEventListener("change", updateScrollSettings);
-$("scrollShowGuideText").addEventListener("change", updateScrollSettings);
+$("scrollEnabled").addEventListener("change", applyScrollUI);
 
 // 그래픽 모드에 따라 fps/업로드 UI 표시 토글
 function applyGraphicModeUI() {
@@ -608,6 +596,15 @@ function fill(cfg) {
   $("graphicMode").value = poll.graphicMode === "image" ? "image" : "bar";
   $("imageFps").value = poll.imageFps || 24;
 
+  const scroll = poll.scroll || {};
+  $("scrollEnabled").checked = scroll.enabled !== false;
+  $("scrollShowAuthor").checked = scroll.showAuthor !== false;
+  $("scrollShowGuideText").checked = scroll.showGuideText !== false;
+  $("scrollGuideText").value = scroll.guideText || "투표해주세요!";
+  $("scrollGuideFrequency").value = scroll.guideFrequency || 5;
+  $("scrollSpeed").value = scroll.speed || 5;
+  applyScrollUI();
+
   const teams = poll.teams || [];
   const tpl = poll.template || (teams.length === 2 ? "winner" : "best");
 
@@ -621,16 +618,6 @@ function fill(cfg) {
 
   // best 에디터
   setChoices(tpl === "best" ? teams : null);
-
-  // 스크롤 설정
-  const scroll = poll.scroll || {};
-  $("scrollEnabled").checked = scroll.enabled !== false;
-  $("scrollShowAuthor").checked = scroll.showAuthor !== false;
-  $("scrollShowGuideText").checked = scroll.showGuideText !== false;
-  $("scrollGuideText").value = scroll.guideText || "투표해주세요!";
-  $("scrollGuideFrequency").value = scroll.guideFrequency || 5;
-  $("scrollSpeed").value = scroll.speed || 5;
-  updateScrollSettings();
 
   setTemplate(tpl);
 }
