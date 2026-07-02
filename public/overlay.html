@@ -680,6 +680,8 @@ function makeScrollChip(item) {
     const name = document.createElement("span");
     name.className = "scroll-name";
     name.textContent = item.author;
+    const color = sourceColor(item.source); // 우측 채팅창과 동일한 규칙: 치지직/유튜브 플랫폼 색상
+    if (color) name.style.color = color;
     chip.appendChild(name);
   }
   const text = document.createElement("span");
@@ -748,13 +750,22 @@ function scrollTick() {
   const now = Date.now();
   const v = scrollPxPerSec();
   const W = $("scrollbar").clientWidth || window.innerWidth || 1920;
+  // 메인 스레드가 잠깐 멈췄다(GC, 채팅 DOM 갱신, WS 폭주 등) 다시 돌아오면, 밀린
+  // 시간만큼을 "정확한" 벽시계 위치로 한 프레임에 몰아 이동시키면 순간적으로 크게
+  // 튀어 보인다. 정확한 위치(idealX)는 그대로 목표로 삼되, 화면에 실제로 그리는
+  // 위치(dispX)는 한 프레임당 이동 폭에 상한을 둬서 지연분을 몇 프레임에 걸쳐
+  // 부드럽게 따라잡는다 — 곧바로 목표 위치로 수렴하므로 화면 간 동기화는 깨지지 않는다.
+  const maxStep = Math.max(20, v * 0.15); // 정상 프레임 이동량보다 넉넉히 커서 평상시엔 개입 안 함
   for (let i = scrollChips.length - 1; i >= 0; i--) {
     const c = scrollChips[i];
-    // 우측 끝(W)에서 entry 시각에 진입해 v(px/s)로 좌측 이동. entry 가 미래면 x > W → 아직 화면 밖.
-    const x = W - ((now - c.entry) / 1000) * v;
-    if (x + c.w < 0) { c.el.remove(); scrollChips.splice(i, 1); continue; } // 왼쪽으로 완전히 퇴장
+    // 우측 끝(W)에서 entry 시각에 진입해 v(px/s)로 좌측 이동. entry 가 미래면 idealX > W → 아직 화면 밖.
+    const idealX = W - ((now - c.entry) / 1000) * v;
+    if (c.dispX == null) c.dispX = idealX; // 처음 그리는 프레임은 바로 정확한 위치로
+    else if (idealX - c.dispX < -maxStep) c.dispX -= maxStep; // 큰 지연 캐치업만 완만하게
+    else c.dispX = idealX;
+    if (c.dispX + c.w < 0) { c.el.remove(); scrollChips.splice(i, 1); continue; } // 왼쪽으로 완전히 퇴장
     // 그리는 위치만 정수 px 로 반올림(서브픽셀 안티에일리어싱 흔들림 방지).
-    c.el.style.transform = `translate3d(${Math.round(x)}px, 0, 0)`;
+    c.el.style.transform = `translate3d(${Math.round(c.dispX)}px, 0, 0)`;
   }
   scrollRafId = requestAnimationFrame(scrollTick);
 }

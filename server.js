@@ -624,8 +624,8 @@ function pushPoll() {
 }
 
 /** 자막 스크롤 항목 1건 발행: 서버 시각(ts)을 찍어 저장 + 전 클라이언트 브로드캐스트 */
-function pushScrollItem(type, author, text) {
-  const item = { seq: ++scrollSeq, ts: Date.now(), type, author: author || "", text: text || "" };
+function pushScrollItem(type, author, text, source) {
+  const item = { seq: ++scrollSeq, ts: Date.now(), type, author: author || "", text: text || "", source: source || "" };
   scrollItems.push(item);
   if (scrollItems.length > SCROLL_ITEMS_MAX) scrollItems.shift();
   lastScrollItemAt = item.ts;
@@ -633,10 +633,10 @@ function pushScrollItem(type, author, text) {
 }
 
 /** 우측 채팅창에 표시된 채팅을 스크롤에도 동일하게 발행 (+ N개마다 안내문 삽입) */
-function feedScrollChat(author, text) {
+function feedScrollChat(author, text, source) {
   if (!scrollOn) return;
   const sc = config.poll.scroll;
-  pushScrollItem("chat", sc.showAuthor ? author : "", text);
+  pushScrollItem("chat", sc.showAuthor ? author : "", text, source);
   scrollGuideCount++;
   if (sc.showGuideText && scrollGuideCount >= sc.guideFrequency) {
     pushScrollItem("guide", "", sc.guideText);
@@ -676,7 +676,7 @@ function pushChat(author, text, isSuperchat, source, meta) {
   chatHistory.push(entry);
   if (chatHistory.length > CHAT_HISTORY_MAX) chatHistory.shift();
   broadcast("chat", entry);
-  feedScrollChat(author, text); // 우측 채팅과 동일한 내용을 하단 스크롤에도 발행
+  feedScrollChat(author, text, source); // 우측 채팅과 동일한 내용(플랫폼 포함)을 하단 스크롤에도 발행
 }
 
 /**
