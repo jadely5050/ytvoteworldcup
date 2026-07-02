@@ -47,10 +47,11 @@ function normalizeConfig(cfg) {
     if (cfg.poll.chatFilter !== "all" && cfg.poll.chatFilter !== "votedOnly") {
       cfg.poll.chatFilter = "votedOnly";
     }
-    // 하단 스크롤(우측 채팅과 동일 내용을 가로로 흘려보냄) 설정 기본값 보정
+    // 하단 스크롤(우측 채팅과 동일 내용을 가로로 흘려보냄) 설정 기본값 보정.
+    // enabled 는 명시적으로 true 로 저장된 경우에만 켜짐 — 기본은 정지 상태.
     const sc = cfg.poll.scroll && typeof cfg.poll.scroll === "object" ? cfg.poll.scroll : {};
     cfg.poll.scroll = {
-      enabled: sc.enabled !== false,
+      enabled: sc.enabled === true,
       showAuthor: sc.showAuthor !== false,
       showGuideText: sc.showGuideText !== false,
       guideText: typeof sc.guideText === "string" ? sc.guideText : "투표해주세요!",

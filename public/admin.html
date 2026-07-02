@@ -312,7 +312,7 @@
   <div class="card">
     <h2>하단 채팅 스크롤</h2>
     <div class="field">
-      <label class="switch"><input type="checkbox" id="scrollEnabled" checked /> 스크롤 송출 <span class="tip">전체 켜기/끄기</span></label>
+      <label class="switch"><input type="checkbox" id="scrollEnabled" /> 스크롤 송출 <span class="tip">전체 켜기/끄기 (기본 꺼짐)</span></label>
     </div>
     <div id="scrollSubFields">
       <div class="grid2">
@@ -362,7 +362,7 @@
   <div class="airbar">
     <span id="airmsg" style="font-size:13px;color:#9aa0ac"></span>
     <button id="tally" class="tally on">■ 집계 종료</button>
-    <button id="scrollToggle" class="tally on">📜 자막 스크롤 정지</button>
+    <button id="scrollToggle" class="tally off">📜 자막 스크롤 시작</button>
     <button id="onair" class="onair off">● 송출 시작</button>
   </div>
 </div><!-- /right -->
@@ -598,7 +598,7 @@ function fill(cfg) {
   $("imageFps").value = poll.imageFps || 24;
 
   const scroll = poll.scroll || {};
-  $("scrollEnabled").checked = scroll.enabled !== false;
+  $("scrollEnabled").checked = scroll.enabled === true; // 기본 꺼짐 — 명시적으로 켜져 있을 때만 체크
   $("scrollShowAuthor").checked = scroll.showAuthor !== false;
   $("scrollShowGuideText").checked = scroll.showGuideText !== false;
   $("scrollGuideText").value = scroll.guideText || "투표해주세요!";
@@ -948,7 +948,7 @@ $("tally").addEventListener("click", async () => {
 });
 
 // ---------- 자막 스크롤 (설정 저장 없이 방송 중 즉시 on/off) ----------
-let scrollOn = true;
+let scrollOn = false; // refreshScrollToggle() 이 서버 실제 상태로 즉시 갱신
 function setScrollToggleUI(on) {
   scrollOn = on;
   const b = $("scrollToggle");
