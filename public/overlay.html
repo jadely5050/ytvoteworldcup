@@ -209,19 +209,18 @@
     height: 54px; overflow: hidden;
     background: rgba(10, 12, 16, 0.55);
   }
-  /* 위치는 JS(requestAnimationFrame)가 translateX 로 직접 제어한다(아래 스크립트 참고).
-     CSS @keyframes 로 애니메이션을 반복하면 콘텐츠가 늘 때마다 재시작해야 해서
-     새 채팅이 들어올 때마다 위치가 처음으로 되돌아가 버리는 문제가 있었다. */
+  /* 각 칩은 절대 위치이며, 위치는 JS 가 "서버 타임스탬프 + 벽시계" 기준으로 매 프레임
+     계산해 translate3d 로 찍는다(아래 스크립트 참고). 로컬 타이머로 위치를 누적하면
+     화면(PGM/PVW/직접 연 탭)마다 접속 시점·프레임 지연 차이가 쌓여 서로 어긋난다. */
   .scrollbar-track {
-    position: absolute; left: 0; top: 0; height: 100%;
-    display: flex; align-items: center; white-space: nowrap;
-    will-change: transform;
-    backface-visibility: hidden; /* 서브픽셀 위치에서 텍스트 안티에일리어싱이 매 프레임 재계산되며
-                                    미세하게 좌우로 흔들려 보이는 것을 완화 */
+    position: absolute; left: 0; top: 0; width: 100%; height: 100%;
   }
   .scroll-chip {
-    display: inline-flex; align-items: baseline; flex-shrink: 0;
+    position: absolute; left: 0; top: 0; height: 100%;
+    display: inline-flex; align-items: center; white-space: nowrap;
     font-size: 22px; line-height: 1; padding: 0 34px;
+    will-change: transform;
+    transform: translate3d(4000px, 0, 0); /* 첫 프레임 계산 전까지 화면 밖 대기 */
   }
   .scroll-chip .scroll-name { font-weight: 700; color: #6fb1ff; margin-right: 8px; }
   .scroll-chip .scroll-text { color: #f2f4f8; }
@@ -632,9 +631,8 @@ function addChat(m) {
     renderChatText(m.text, m.emojis);
   list.appendChild(div);
   while (list.children.length > maxChat) list.removeChild(list.firstChild);
-
-  // 우측 채팅 패널에 표시되는 것과 동일한 채팅을 하단 스크롤에도 그대로 흘려보낸다.
-  addScrollItem(m);
+  // 하단 스크롤은 여기서 처리하지 않는다 — 서버가 발행하는 scrollItem/scrollHistory
+  // 메시지(타임스탬프 포함)로만 그려서 모든 화면이 동일한 위치를 유지한다.
 }
 
 function escapeHtml(s) {
@@ -642,19 +640,23 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-/* ---------- 하단 채팅 스크롤(우→좌, JS 로 위치 직접 제어) ---------- */
-// admin 에서 설정한 값(enabled/showAuthor/showGuideText/guideText/guideFrequency/speed).
-// 이전엔 새 채팅마다 CSS 애니메이션을 재시작해 위치가 계속 처음으로 되돌아갔다.
-// 여기서는 requestAnimationFrame 으로 translateX 를 계속 누적시키고, 새 항목은
-// 트랙 뒤에 이어붙이기만 해서 현재 스크롤 위치를 절대 건드리지 않는다.
-// 서버의 첫 poll 메시지가 도착하기 전까지의 기본값. 기본은 정지(꺼짐) — 서버 설정이 오면 즉시 갱신됨.
+/* ---------- 하단 채팅 스크롤(우→좌, 서버 타임스탬프 기준 렌더링) ---------- */
+// 스크롤 항목은 서버가 발행하며(scrollItem/scrollHistory), 각 항목에 서버 시각(ts)이
+// 찍혀 있다. 클라이언트는 위치를 로컬 타이머로 누적하지 않고 매 프레임
+// "지금 시각 − 진입 시각" 으로 계산한다. 그래서 어느 화면(PGM/PVW/직접 연 탭)이든,
+// 언제 접속했든, 프레임이 밀렸다 풀려도 같은 순간엔 항상 같은 위치에 그려진다.
+// 서버의 첫 poll 메시지가 도착하기 전까지의 기본값. 기본은 정지(꺼짐).
 let scrollCfg = { enabled: false, showAuthor: true, showGuideText: true, guideText: "투표해주세요!", guideFrequency: 5, speed: 5 };
-const SCROLL_MAX_CHIPS = 60; // 하드 캡(비정상적으로 오래 안 지워질 경우 대비)
-const SCROLL_KEEP_CHIPS = 4; // 화면 밖으로 나가도 최소 이만큼은 남겨둠(빈 화면 방지)
-let scrollChatCounter = 0; // guideFrequency 개마다 안내문 1회 삽입
-let scrollX = 0; // 트랙의 현재 translateX(px)
-let scrollLastT = null;
+let scrollRaw = []; // 서버가 발행한 원본 항목 { seq, ts, type, author, text }
+let scrollChips = []; // 화면에 올라간 칩 { seq, ts, el, w, entry } (entry = 우측 끝 진입 시각 ms)
 let scrollRafId = null;
+const SCROLL_RAW_MAX = 60;
+const SCROLL_MAX_BACKLOG_MS = 25000; // 채팅 폭주로 대기열이 이보다 밀리면 그 항목은 건너뜀
+
+function scrollPxPerSec() {
+  const speed = Math.max(1, Math.min(10, scrollCfg.speed || 5));
+  return 30 + (speed - 1) * 30; // 1(느림, 30px/s) ~ 10(빠름, 300px/s)
+}
 
 function applyScrollConfig(cfg) {
   if (!cfg) return;
@@ -662,20 +664,16 @@ function applyScrollConfig(cfg) {
   scrollCfg = Object.assign({}, scrollCfg, cfg);
   $("scrollbar").style.display = scrollCfg.enabled ? "" : "none";
   if (!scrollCfg.enabled) {
-    stopScrollLoop();
-    $("scrollbarTrack").innerHTML = "";
-    scrollChatCounter = 0;
+    stopScrollLoop(); // 원본(scrollRaw)은 유지 — 다시 켜면 시각 기준으로 이어서 그림
   } else if (!wasEnabled) {
-    resetScrollPosition();
-    // 방금 켜졌으면 최대 8초(유휴 하트비트 주기) 기다리지 않고 바로 하나 띄운다.
-    if (scrollCfg.showGuideText) appendScrollChip({ type: "guide", text: scrollCfg.guideText || "" });
+    rebuildScrollChips();
   }
 }
 
 function makeScrollChip(item) {
   const chip = document.createElement("span");
   chip.className = "scroll-chip" + (item.type === "guide" ? " guide" : "");
-  if (item.type === "chat" && scrollCfg.showAuthor && item.author) {
+  if (item.type === "chat" && item.author) {
     const name = document.createElement("span");
     name.className = "scroll-name";
     name.textContent = item.author;
@@ -689,63 +687,44 @@ function makeScrollChip(item) {
   return chip;
 }
 
-function addScrollItem(m) {
-  if (!scrollCfg.enabled) return;
-  appendScrollChip({ type: "chat", author: m.author || "", text: m.text || "" });
-
-  scrollChatCounter++;
-  if (scrollCfg.showGuideText && scrollChatCounter >= scrollCfg.guideFrequency) {
-    appendScrollChip({ type: "guide", text: scrollCfg.guideText || "" });
-    scrollChatCounter = 0;
-  }
-}
-
-// 채팅이 뜸해 트랙이 완전히 비면(모든 항목이 지나감) 화면이 계속 공백으로 남으므로,
-// 유휴 상태에서는 안내문을 주기적으로 재삽입해 채운다. 실제 채팅이 다시 들어오면
-// addScrollItem 이 그대로 이어붙이므로 이 하트비트와 충돌하지 않는다.
-const IDLE_GUIDE_HEARTBEAT_MS = 8000;
-setInterval(() => {
-  if (!scrollCfg.enabled || !scrollCfg.showGuideText) return;
+// 서버 항목 1건을 화면 칩으로 올린다. 진입 시각(entry)은 "서버 ts" 와 "앞 칩이 다
+// 들어온 시각" 중 늦은 쪽 — 같은 데이터로 계산하므로 모든 화면에서 동일한 값이 나온다.
+function addScrollChip(item) {
   const track = $("scrollbarTrack");
-  if (track.children.length === 0) {
-    appendScrollChip({ type: "guide", text: scrollCfg.guideText || "" });
-  }
-}, IDLE_GUIDE_HEARTBEAT_MS);
-
-function appendScrollChip(item) {
-  const track = $("scrollbarTrack");
-  if (track.children.length === 0) resetScrollPosition(); // 비어 있던 상태에서 재개 시에만 위치 초기화
-  const chip = makeScrollChip(item);
-  track.appendChild(chip);
-  // 폭은 추가 시 1회만 측정해 캐시(매 프레임 강제 리플로우 방지 — 속도가 빠를수록
-  // trimScrolledChips 호출 빈도가 늘어 이 리플로우 비용이 튐 현상의 원인 중 하나였다).
-  chip._w = chip.getBoundingClientRect().width;
-  trimScrolledChips();
+  const el = makeScrollChip(item);
+  track.appendChild(el);
+  const w = el.getBoundingClientRect().width;
+  const v = scrollPxPerSec();
+  const prev = scrollChips[scrollChips.length - 1];
+  let entry = item.ts;
+  if (prev) entry = Math.max(entry, prev.entry + (prev.w / v) * 1000);
+  if (entry - item.ts > SCROLL_MAX_BACKLOG_MS) { el.remove(); return; } // 대기열 과밀 — 이 항목은 생략
+  scrollChips.push({ seq: item.seq, ts: item.ts, el, w, entry });
   startScrollLoop();
 }
 
-// 화면 왼쪽으로 완전히 사라진 맨 앞 항목만 정리한다. 지운 폭만큼 x 를 보정하므로
-// 남은(특히 화면에 보이는) 항목들의 위치는 전혀 변하지 않아 시각적 점프가 없다.
-// scrollTick 에서 transform 적용 "전"에 호출해야 보정된 값이 그대로 화면에 반영된다.
-function trimScrolledChips() {
-  const track = $("scrollbarTrack");
-  while (track.children.length > SCROLL_KEEP_CHIPS) {
-    const first = track.children[0];
-    const w = first._w != null ? first._w : first.getBoundingClientRect().width;
-    if (scrollX + w >= 0 && track.children.length <= SCROLL_MAX_CHIPS) break; // 아직 화면에 걸쳐 있으면 유지
-    track.removeChild(first);
-    scrollX += w;
-  }
+function onScrollItem(item) {
+  scrollRaw.push(item);
+  if (scrollRaw.length > SCROLL_RAW_MAX) scrollRaw.shift();
+  if (scrollCfg.enabled) addScrollChip(item);
 }
 
-function resetScrollPosition() {
-  scrollX = ($("scrollbar").clientWidth || window.innerWidth || 1920);
-  scrollLastT = null;
+// 접속(재접속) 시 서버가 보내주는 최근 항목으로 전체 재구성 — 늦게 열린 화면도
+// 같은 ts 기준으로 계산하므로 이미 떠 있던 화면과 동일한 위치에서 시작한다.
+function onScrollHistory(list) {
+  scrollRaw = Array.isArray(list) ? list.slice(-SCROLL_RAW_MAX) : [];
+  rebuildScrollChips();
+}
+
+function rebuildScrollChips() {
+  for (const c of scrollChips) c.el.remove();
+  scrollChips = [];
+  if (!scrollCfg.enabled) return;
+  for (const item of scrollRaw) addScrollChip(item);
 }
 
 function startScrollLoop() {
   if (scrollRafId != null) return;
-  scrollLastT = null;
   scrollRafId = requestAnimationFrame(scrollTick);
 }
 function stopScrollLoop() {
@@ -753,29 +732,22 @@ function stopScrollLoop() {
   scrollRafId = null;
 }
 
-function scrollTick(t) {
-  const track = $("scrollbarTrack");
-  if (!scrollCfg.enabled || track.children.length === 0) {
-    scrollRafId = null; // 보여줄 게 없으면 정지 — 다음 addScrollItem 이 재개
+function scrollTick() {
+  if (!scrollCfg.enabled || scrollChips.length === 0) {
+    scrollRafId = null; // 보여줄 게 없으면 정지 — 다음 항목 도착 시 재개
     return;
   }
-  if (scrollLastT == null) scrollLastT = t;
-  // 프레임이 잠깐 지연(탭 전환/GC 등)되면 dt 가 커져 한 프레임에 크게 튀므로 상한을 둔다.
-  const dt = Math.min((t - scrollLastT) / 1000, 0.05);
-  scrollLastT = t;
-
-  const speed = Math.max(1, Math.min(10, scrollCfg.speed || 5));
-  const pxPerSec = 30 + (speed - 1) * 30; // 1(느림, 30px/s) ~ 10(빠름, 300px/s)
-  scrollX -= pxPerSec * dt;
-  // trim(위치 보정)을 먼저 끝내고 나서 transform 을 적용해야 한다. 순서가 반대이면
-  // "보정 전" 위치가 한 프레임 그려진 뒤에야 보정되어, 매 트림마다 화면이 훅 튀어
-  // 보였다(항목이 자주 화면 밖으로 빠지는 고속에서 특히 두드러짐).
-  trimScrolledChips();
-  // scrollX 자체는 소수 단위로 누적(정확한 누적 속도 유지)하되, 실제로 그리는 위치만
-  // 정수 픽셀로 반올림한다. 그렇지 않으면 매 프레임 서브픽셀 단위로 위치가 바뀌며
-  // 텍스트 안티에일리어싱(글자 테두리)이 매번 다시 계산되어 미세하게 좌우로
-  // 흔들려 보인다(고속일수록 눈에 띔). translate3d 로 GPU 합성 레이어를 명시.
-  track.style.transform = `translate3d(${Math.round(scrollX)}px, 0, 0)`;
+  const now = Date.now();
+  const v = scrollPxPerSec();
+  const W = $("scrollbar").clientWidth || window.innerWidth || 1920;
+  for (let i = scrollChips.length - 1; i >= 0; i--) {
+    const c = scrollChips[i];
+    // 우측 끝(W)에서 entry 시각에 진입해 v(px/s)로 좌측 이동. entry 가 미래면 x > W → 아직 화면 밖.
+    const x = W - ((now - c.entry) / 1000) * v;
+    if (x + c.w < 0) { c.el.remove(); scrollChips.splice(i, 1); continue; } // 왼쪽으로 완전히 퇴장
+    // 그리는 위치만 정수 px 로 반올림(서브픽셀 안티에일리어싱 흔들림 방지).
+    c.el.style.transform = `translate3d(${Math.round(x)}px, 0, 0)`;
+  }
   scrollRafId = requestAnimationFrame(scrollTick);
 }
 
@@ -796,6 +768,8 @@ function connect() {
     if (type === "poll") renderPoll(data);
     else if (type === "chat") addChat(data);
     else if (type === "chatHistory") data.forEach(addChat);
+    else if (type === "scrollItem") onScrollItem(data);
+    else if (type === "scrollHistory") onScrollHistory(data);
     else if (type === "onair") setOnAir(data);
   };
 }
