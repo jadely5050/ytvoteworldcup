@@ -208,7 +208,9 @@
     position: absolute; left: 0; right: 0; bottom: 0;
     height: 54px; overflow: hidden;
     background: rgba(10, 12, 16, 0.55);
+    opacity: 0; transition: opacity .6s ease; /* 시작/정지 시 서서히 fade in/out */
   }
+  .scrollbar.show { opacity: 1; }
   /* 각 칩은 절대 위치이며, 위치는 JS 가 "서버 타임스탬프 + 벽시계" 기준으로 매 프레임
      계산해 translate3d 로 찍는다(아래 스크립트 참고). 로컬 타이머로 위치를 누적하면
      화면(PGM/PVW/직접 연 탭)마다 접속 시점·프레임 지연 차이가 쌓여 서로 어긋난다. */
@@ -276,7 +278,7 @@
     <div class="chat-list" id="chatList"></div>
   </div>
 
-  <div class="scrollbar" id="scrollbar" style="display:none">
+  <div class="scrollbar" id="scrollbar">
     <div class="scrollbar-track" id="scrollbarTrack"></div>
   </div>
 </div>
@@ -651,7 +653,9 @@ let scrollRaw = []; // 서버가 발행한 원본 항목 { seq, ts, type, author
 let scrollChips = []; // 화면에 올라간 칩 { seq, ts, el, w, entry } (entry = 우측 끝 진입 시각 ms)
 let scrollRafId = null;
 const SCROLL_RAW_MAX = 60;
-const SCROLL_MAX_BACKLOG_MS = 25000; // 채팅 폭주로 대기열이 이보다 밀리면 그 항목은 건너뜀
+// 채팅 폭주 시 대기열이 이 이상 밀리면 "아직 진입 전인 오래된 항목"을 버리고 최신
+// 채팅을 우선 태운다 — 우측 채팅창(최신만 표시)과 신선도를 맞추기 위함.
+const SCROLL_MAX_BACKLOG_MS = 8000;
 
 function scrollPxPerSec() {
   const speed = Math.max(1, Math.min(10, scrollCfg.speed || 5));
@@ -662,12 +666,11 @@ function applyScrollConfig(cfg) {
   if (!cfg) return;
   const wasEnabled = scrollCfg.enabled;
   scrollCfg = Object.assign({}, scrollCfg, cfg);
-  $("scrollbar").style.display = scrollCfg.enabled ? "" : "none";
-  if (!scrollCfg.enabled) {
-    stopScrollLoop(); // 원본(scrollRaw)은 유지 — 다시 켜면 시각 기준으로 이어서 그림
-  } else if (!wasEnabled) {
-    rebuildScrollChips();
-  }
+  // display 대신 opacity(CSS transition)로 서서히 fade in/out. 끌 때도 루프는 계속 돌아
+  // 남은 칩이 자연스럽게 흘러 나가고(멈춘 채 사라지지 않음), 서버가 켤 때 큐를
+  // 비워주므로(scrollHistory []) 다시 켜면 우측 끝에서 새로 시작한다.
+  $("scrollbar").classList.toggle("show", !!scrollCfg.enabled);
+  if (scrollCfg.enabled && !wasEnabled) rebuildScrollChips();
 }
 
 function makeScrollChip(item) {
@@ -695,10 +698,17 @@ function addScrollChip(item) {
   track.appendChild(el);
   const w = el.getBoundingClientRect().width;
   const v = scrollPxPerSec();
-  const prev = scrollChips[scrollChips.length - 1];
-  let entry = item.ts;
-  if (prev) entry = Math.max(entry, prev.entry + (prev.w / v) * 1000);
-  if (entry - item.ts > SCROLL_MAX_BACKLOG_MS) { el.remove(); return; } // 대기열 과밀 — 이 항목은 생략
+  let prev = scrollChips[scrollChips.length - 1];
+  let entry = prev ? Math.max(item.ts, prev.entry + (prev.w / v) * 1000) : item.ts;
+  // 대기열이 너무 밀리면 "이 항목이 도착한 시점(ts)에 아직 진입 전이던" 오래된 대기
+  // 칩부터 버려 최신 채팅을 우선 태운다. 판정에 로컬 시계를 쓰지 않고 공유 데이터
+  // (ts·entry)만 쓰므로 모든 화면이 똑같이 버리고 똑같이 남긴다.
+  while (prev && entry - item.ts > SCROLL_MAX_BACKLOG_MS && prev.entry > item.ts) {
+    prev.el.remove();
+    scrollChips.pop();
+    prev = scrollChips[scrollChips.length - 1];
+    entry = prev ? Math.max(item.ts, prev.entry + (prev.w / v) * 1000) : item.ts;
+  }
   scrollChips.push({ seq: item.seq, ts: item.ts, el, w, entry });
   startScrollLoop();
 }
@@ -727,14 +737,12 @@ function startScrollLoop() {
   if (scrollRafId != null) return;
   scrollRafId = requestAnimationFrame(scrollTick);
 }
-function stopScrollLoop() {
-  if (scrollRafId != null) cancelAnimationFrame(scrollRafId);
-  scrollRafId = null;
-}
 
 function scrollTick() {
-  if (!scrollCfg.enabled || scrollChips.length === 0) {
-    scrollRafId = null; // 보여줄 게 없으면 정지 — 다음 항목 도착 시 재개
+  // enabled 를 검사하지 않는다 — 정지(fade out) 중에도 남은 칩이 자연스럽게 흘러
+  // 나가도록 계속 돌고, 칩이 다 빠지면 스스로 멈춘다(다음 항목 도착 시 재개).
+  if (scrollChips.length === 0) {
+    scrollRafId = null;
     return;
   }
   const now = Date.now();

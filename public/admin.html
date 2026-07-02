@@ -310,10 +310,7 @@
   </div>
 
   <div class="card">
-    <h2>하단 채팅 스크롤</h2>
-    <div class="field">
-      <label class="switch"><input type="checkbox" id="scrollEnabled" /> 스크롤 송출 <span class="tip">전체 켜기/끄기 (기본 꺼짐)</span></label>
-    </div>
+    <h2>하단 채팅 스크롤 <span class="tip">송출 시작/정지는 우측 하단 [📜 자막 스크롤] 버튼 (기본 정지)</span></h2>
     <div id="scrollSubFields">
       <div class="grid2">
         <div class="field">
@@ -538,13 +535,6 @@ async function uploadChoiceImage(div, input) {
   }
 }
 
-// 스크롤 송출 껐을 때 하위 옵션 흐리게(입력은 막지 않음 — 저장은 여전히 값 유지)
-function applyScrollUI() {
-  const on = $("scrollEnabled").checked;
-  $("scrollSubFields").style.opacity = on ? "1" : ".4";
-}
-$("scrollEnabled").addEventListener("change", applyScrollUI);
-
 // 그래픽 모드에 따라 fps/업로드 UI 표시 토글
 function applyGraphicModeUI() {
   const isImg = $("graphicMode").value === "image";
@@ -598,13 +588,11 @@ function fill(cfg) {
   $("imageFps").value = poll.imageFps || 24;
 
   const scroll = poll.scroll || {};
-  $("scrollEnabled").checked = scroll.enabled === true; // 기본 꺼짐 — 명시적으로 켜져 있을 때만 체크
   $("scrollShowAuthor").checked = scroll.showAuthor !== false;
   $("scrollShowGuideText").checked = scroll.showGuideText !== false;
   $("scrollGuideText").value = scroll.guideText || "투표해주세요!";
   $("scrollGuideFrequency").value = scroll.guideFrequency || 5;
   $("scrollSpeed").value = scroll.speed || 5;
-  applyScrollUI();
 
   const teams = poll.teams || [];
   const tpl = poll.template || (teams.length === 2 ? "winner" : "best");
@@ -641,7 +629,8 @@ function buildConfig() {
       imageFps: parseInt($("imageFps").value, 10) || 24,
       question: (template === "winner" ? $("q_winner") : $("q_best")).value.trim(),
       scroll: {
-        enabled: $("scrollEnabled").checked,
+        // 송출 여부는 설정이 아니라 우측 [자막 스크롤] 버튼(런타임 토글)이 담당 — 저장은 항상 정지 상태 유지
+        enabled: false,
         showAuthor: $("scrollShowAuthor").checked,
         showGuideText: $("scrollShowGuideText").checked,
         guideText: $("scrollGuideText").value.trim() || "투표해주세요!",

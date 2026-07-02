@@ -108,9 +108,9 @@ const rawCounts = new Map();
 let nativePoll = null; // 네이티브 설문 감지 시 { question, options:[{label,votes}], total }
 let onAir = false; // 송출 상태 (layout.html 그래픽 fade in/out)
 let tallying = true; // 집계 상태 (false 면 득표 집계 정지 = 투표 종료)
-// 자막 스크롤 런타임 on/off (tally/onair 와 동일한 패턴). 설정 저장(poll.scroll.enabled)과
-// 별개로 방송 중 즉시 켜고 끌 수 있게 분리한 값. 초기값/설정 저장 시에는 config 값을 따른다.
-let scrollOn = config.poll.scroll.enabled !== false;
+// 자막 스크롤 런타임 on/off (tally/onair 와 동일한 패턴). 송출 여부는 오직
+// admin 우측 [자막 스크롤] 버튼으로만 제어하며, 부팅/설정 저장 시에는 항상 정지.
+let scrollOn = false;
 
 // 하단 자막 스크롤 항목 큐. 서버가 각 항목에 타임스탬프(ts)를 찍어 브로드캐스트하고,
 // 모든 클라이언트는 이 ts 기준(벽시계)으로 위치를 계산한다 → 어느 화면이든 언제
@@ -566,7 +566,14 @@ app.post("/admin/tally", (req, res) => {
 app.get("/admin/scroll", (_req, res) => res.json({ on: scrollOn }));
 app.post("/admin/scroll", (req, res) => {
   scrollOn = !!(req.body && req.body.on);
-  if (scrollOn) lastScrollItemAt = 0; // 켜자마자 유휴 하트비트가 곧바로 안내문을 채우도록
+  if (scrollOn) {
+    // 다시 켜면 이전 잔여 항목을 버리고 우측 끝에서 새로 시작한다.
+    scrollItems.length = 0;
+    scrollGuideCount = 0;
+    broadcast("scrollHistory", []); // 전 화면의 잔여 칩도 즉시 비움
+    if (config.poll.scroll.showGuideText) pushScrollItem("guide", "", config.poll.scroll.guideText);
+    lastScrollItemAt = Date.now();
+  }
   pushPoll();
   console.log(`[scroll] ${scrollOn ? "ON (자막 스크롤 시작)" : "OFF (자막 스크롤 정지)"}`);
   res.json({ ok: true, on: scrollOn });
@@ -940,7 +947,7 @@ function resetStats() {
 function restartFromConfig(newConfig, keepStats) {
   stopSources();
   config = normalizeConfig(newConfig);
-  scrollOn = config.poll.scroll.enabled !== false; // 설정 저장 시 스크롤 런타임 토글도 저장값으로 재동기화
+  scrollOn = false; // 설정 저장이 자막 송출을 시작시키지 않도록 항상 정지 — 시작은 [자막 스크롤] 버튼으로만
   if (!keepStats) resetStats();
   pushPoll();
   startSources();
