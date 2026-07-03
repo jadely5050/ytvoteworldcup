@@ -779,10 +779,13 @@ function scrollTick(rafT) {
     // 우측 끝(W)에서 entry 시각에 진입해 v(px/s)로 좌측 이동. entry 가 미래면 x > W → 아직 화면 밖.
     const x = W - ((now - c.entry) / 1000) * v;
     if (x + c.w < 0) { c.el.remove(); scrollChips.splice(i, 1); continue; } // 왼쪽으로 완전히 퇴장
-    // 반올림하지 않는다 — 칩은 GPU 합성 레이어(translate3d + will-change)라 소수점
-    // 위치도 부드럽게 필터링되며, 정수 반올림은 프레임당 이동량을 2px/3px 로
-    // 불균일하게 만들어 오히려 미세한 떨림으로 보였다.
-    c.el.style.transform = `translate3d(${x.toFixed(2)}px, 0, 0)`;
+    // 정수 픽셀로 반올림한다. 텍스트는 서브픽셀 위치에 놓이면(소수점 좌표) 매
+    // 프레임 안티에일리어싱이 다시 계산되며 실제 화면에서도 미세하게 흔들려
+    // 보인다(녹화와 무관, 육안으로도 보임). 예전엔 위치 자체가 널뛰어(Date.now()
+    // 직접 사용) 반올림이 원인처럼 보였지만, 지금은 서보 클록으로 아래 값(x)
+    // 자체가 단조 감소이므로 반올림해도 역행이 생기지 않는다(단조 함수에
+    // round 를 적용해도 여전히 단조).
+    c.el.style.transform = `translate3d(${Math.round(x)}px, 0, 0)`;
   }
   scrollRafId = requestAnimationFrame(scrollTick);
 }
