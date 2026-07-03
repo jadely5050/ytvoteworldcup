@@ -740,32 +740,49 @@ function startScrollLoop() {
   scrollRafId = requestAnimationFrame(scrollTick);
 }
 
-function scrollTick() {
+// ----- 서보 클록: vsync 에 정렬된 부드러운 벽시계 근사 -----
+// Date.now() 를 매 프레임 직접 읽으면 rAF(vsync) 와 정렬되지 않아 프레임당 이동량이
+// 널뛰고(실측: 0px 멈춤 → 9~11px 점프 반복), 프레임이 밀리면 밀린 만큼을 다음
+// 프레임에 한 번에 점프한다. 대신 rAF 타임스탬프 기준으로 매 프레임 dt 만큼만
+// 균일하게 진행하고, 실제 벽시계와의 오차는 프레임당 최대 ±8% 속도 가감으로만
+// 서서히 흡수한다 → 점프가 원천적으로 없고, 화면 간 동기화(수십 ms 이내)는 유지된다.
+const perfToWall = Date.now() - performance.now(); // 로드 시 1회 추정한 클록 오프셋
+let servoClock = null; // 부드럽게 진행되는 "벽시계 근사" (ms)
+let servoLastT = null;
+
+function servoNow(rafT) {
+  const target = rafT + perfToWall; // 이 프레임의 실제 벽시계
+  if (servoClock == null || servoLastT == null || rafT - servoLastT > 1000) {
+    servoClock = target; // 첫 프레임/장기 정지 후에는 즉시 동기화(어차피 새로 그림)
+  } else {
+    const dt = rafT - servoLastT;
+    const err = target - (servoClock + dt); // 그대로 진행했을 때 남는 벽시계 오차
+    servoClock += dt + Math.max(-dt * 0.08, Math.min(dt * 0.08, err));
+  }
+  servoLastT = rafT;
+  return servoClock;
+}
+
+function scrollTick(rafT) {
   // enabled 를 검사하지 않는다 — 정지(fade out) 중에도 남은 칩이 자연스럽게 흘러
   // 나가도록 계속 돌고, 칩이 다 빠지면 스스로 멈춘다(다음 항목 도착 시 재개).
   if (scrollChips.length === 0) {
     scrollRafId = null;
+    servoLastT = null; // 루프 중단 동안의 시간은 재시작 시 즉시 재동기화로 처리
     return;
   }
-  const now = Date.now();
+  const now = servoNow(rafT);
   const v = scrollPxPerSec();
   const W = $("scrollbar").clientWidth || window.innerWidth || 1920;
-  // 메인 스레드가 잠깐 멈췄다(GC, 채팅 DOM 갱신, WS 폭주 등) 다시 돌아오면, 밀린
-  // 시간만큼을 "정확한" 벽시계 위치로 한 프레임에 몰아 이동시키면 순간적으로 크게
-  // 튀어 보인다. 정확한 위치(idealX)는 그대로 목표로 삼되, 화면에 실제로 그리는
-  // 위치(dispX)는 한 프레임당 이동 폭에 상한을 둬서 지연분을 몇 프레임에 걸쳐
-  // 부드럽게 따라잡는다 — 곧바로 목표 위치로 수렴하므로 화면 간 동기화는 깨지지 않는다.
-  const maxStep = Math.max(20, v * 0.15); // 정상 프레임 이동량보다 넉넉히 커서 평상시엔 개입 안 함
   for (let i = scrollChips.length - 1; i >= 0; i--) {
     const c = scrollChips[i];
-    // 우측 끝(W)에서 entry 시각에 진입해 v(px/s)로 좌측 이동. entry 가 미래면 idealX > W → 아직 화면 밖.
-    const idealX = W - ((now - c.entry) / 1000) * v;
-    if (c.dispX == null) c.dispX = idealX; // 처음 그리는 프레임은 바로 정확한 위치로
-    else if (idealX - c.dispX < -maxStep) c.dispX -= maxStep; // 큰 지연 캐치업만 완만하게
-    else c.dispX = idealX;
-    if (c.dispX + c.w < 0) { c.el.remove(); scrollChips.splice(i, 1); continue; } // 왼쪽으로 완전히 퇴장
-    // 그리는 위치만 정수 px 로 반올림(서브픽셀 안티에일리어싱 흔들림 방지).
-    c.el.style.transform = `translate3d(${Math.round(c.dispX)}px, 0, 0)`;
+    // 우측 끝(W)에서 entry 시각에 진입해 v(px/s)로 좌측 이동. entry 가 미래면 x > W → 아직 화면 밖.
+    const x = W - ((now - c.entry) / 1000) * v;
+    if (x + c.w < 0) { c.el.remove(); scrollChips.splice(i, 1); continue; } // 왼쪽으로 완전히 퇴장
+    // 반올림하지 않는다 — 칩은 GPU 합성 레이어(translate3d + will-change)라 소수점
+    // 위치도 부드럽게 필터링되며, 정수 반올림은 프레임당 이동량을 2px/3px 로
+    // 불균일하게 만들어 오히려 미세한 떨림으로 보였다.
+    c.el.style.transform = `translate3d(${x.toFixed(2)}px, 0, 0)`;
   }
   scrollRafId = requestAnimationFrame(scrollTick);
 }
