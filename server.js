@@ -101,10 +101,10 @@ function extractChzzkChannelId(input) {
 // ---------- state ----------
 const CHAT_HISTORY_MAX = 30;
 const chatHistory = [];
-/** authorChannelId -> teamKey (중복불허 뷰: 각 사용자의 "마지막 표") */
+/** authorChannelId -> teamKey (각 사용자의 "마지막 표" — 중복/변경 감지용) */
 const userVotes = new Map();
-/** teamKey -> count (중복허용 뷰: 인정된 모든 표의 누적 이벤트 수) */
-const rawCounts = new Map();
+/** teamKey -> count (화면에 표시되는 단 하나의 누적 카운터) */
+const teamCounts = new Map();
 /** channelId 없는(익명) 표에 고유 키를 부여하기 위한 증가 시퀀스 */
 let anonVoteSeq = 0;
 let nativePoll = null; // 네이티브 설문 감지 시 { question, options:[{label,votes}], total }
@@ -164,23 +164,30 @@ function matchStarVote(text) {
 }
 
 /**
- * 표 1건을 두 통계에 "항상 함께" 반영한다.
- *  - rawCounts (중복허용 뷰): 인정된 모든 표를 누적
- *  - userVotes (중복불허 뷰): 사용자별 마지막 표
- * 두 뷰를 늘 함께 유지해야, 방송 중 중복허용/불허 토글을 바꿔도 화면이 "한 번도
- * 안 채워진 반대편 창고(낡은 값)"로 튀지 않는다. tallyKeyword() 가 현재 토글에
- * 맞는 뷰를 골라 보여줄 뿐, 어느 쪽도 데이터가 사라지지 않는다.
- * 반환값: 이 표가 "새 변화"인지(true) — 중복불허에서 같은 유저가 같은 팀에 재투표하면
- *         화면상 변화가 없으므로 false(재브로드캐스트/득표 애니메이션 생략).
+ * 표 1건을 "단 하나의" 누적 카운터(teamCounts)에 반영한다. 방송 중 중복허용/불허
+ * 토글을 바꿔도 이 카운터는 그대로 유지된 채 그 시점부터 새 규칙으로 이어서
+ * 누적될 뿐, 절대 재계산·리셋되지 않는다(과거엔 모드별로 별도 창고를 뒀다가
+ * 토글 시 반대편의 낡은/빈 값을 읽어 숫자가 갑자기 줄어드는 문제가 있었다).
+ *
+ *  - 중복허용(oneVotePerUser=false): 매 표마다 무조건 +1.
+ *  - 중복불허(oneVotePerUser=true): 이 사용자의 "마지막 표"가 이번과 같으면
+ *    무시(중복 방지). 다르면(A→B 변심 포함) 새 팀에 +1 — 단, 이전 팀에서는
+ *    -1 하지 않는다(한 번 오른 숫자는 안 내려간다는 방송 요구사항).
+ *    즉 우유부단하게 여러 번 바꾸면 그때마다 새 팀에 +1 씩 더 쌓일 수 있다.
+ *
+ * userVotes(사용자별 마지막 표)는 모드와 무관하게 항상 갱신 — 중복허용 중에도
+ * 기록해둬야, 나중에 중복불허로 바뀐 순간부터 "누가 이미 투표했었는지"를
+ * 정확히 판단할 수 있다.
+ *
+ * 반환값: 실제로 카운터가 올라간 새 변화인지(true) — 화면 갱신/득표 애니메이션
+ *         트리거 여부에 쓰인다.
  */
 function registerVote(channelId, teamKey) {
   if (!teamKey) return false;
   const id = channelId || `anon-${anonVoteSeq++}`;
-  const repeatSameTeam = userVotes.get(id) === teamKey;
-  rawCounts.set(teamKey, (rawCounts.get(teamKey) || 0) + 1);
+  if (config.poll.oneVotePerUser && userVotes.get(id) === teamKey) return false;
   userVotes.set(id, teamKey);
-  // 중복불허 모드에서 같은 팀 재투표는 표시 숫자가 그대로이므로 갱신 신호를 아낀다.
-  if (config.poll.oneVotePerUser && repeatSameTeam) return false;
+  teamCounts.set(teamKey, (teamCounts.get(teamKey) || 0) + 1);
   return true;
 }
 
@@ -227,14 +234,8 @@ function shouldShowChat(text) {
 function tallyKeyword() {
   const counts = new Map();
   for (const t of config.poll.teams) counts.set(t.key, 0);
-  if (config.poll.oneVotePerUser) {
-    for (const key of userVotes.values()) {
-      if (counts.has(key)) counts.set(key, counts.get(key) + 1);
-    }
-  } else {
-    for (const [key, n] of rawCounts) {
-      if (counts.has(key)) counts.set(key, n);
-    }
+  for (const [key, n] of teamCounts) {
+    if (counts.has(key)) counts.set(key, n);
   }
   return counts;
 }
@@ -949,7 +950,7 @@ function stopSources() {
 /** 투표/채팅 통계 초기화 */
 function resetStats() {
   userVotes.clear();
-  rawCounts.clear();
+  teamCounts.clear();
   anonVoteSeq = 0;
   nativePoll = null;
   chatHistory.length = 0;
