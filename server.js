@@ -107,6 +107,50 @@ const userVotes = new Map();
 const teamCounts = new Map();
 /** channelId 없는(익명) 표에 고유 키를 부여하기 위한 증가 시퀀스 */
 let anonVoteSeq = 0;
+
+// ---------- 투표 데이터 파일 저장(서버 재시작 대비) ----------
+// 투표 데이터는 메모리(Map)에만 있어 서버가 재시작되면(정전/크래시/실수로 재실행)
+// 전부 사라진다. 매 표마다 파일에 쓰면 디스크 I/O 가 너무 잦아지므로, 일정 표수가
+// 쌓일 때마다(+ 정상 종료 시 1회) 스냅샷을 저장하고, 부팅 시 그 스냅샷으로 복원한다.
+// (표 하나 정도의 유실은 감수 — 매번 쓰는 것보다 훨씬 가볍다.)
+const VOTES_STATE_PATH = path.join(__dirname, "votes-state.json");
+const VOTE_SAVE_EVERY = 20; // 이만큼 표가 새로 반영될 때마다 저장
+let voteSaveCounter = 0;
+
+function loadVoteState() {
+  try {
+    const raw = fs.readFileSync(VOTES_STATE_PATH, "utf8");
+    const saved = JSON.parse(raw);
+    if (saved && Array.isArray(saved.userVotes)) {
+      for (const [id, key] of saved.userVotes) userVotes.set(id, key);
+    }
+    if (saved && Array.isArray(saved.teamCounts)) {
+      for (const [key, n] of saved.teamCounts) teamCounts.set(key, n);
+    }
+    if (saved && typeof saved.anonVoteSeq === "number") anonVoteSeq = saved.anonVoteSeq;
+    if (saved) {
+      const when = saved.savedAt ? new Date(saved.savedAt).toLocaleString() : "?";
+      console.log(`[votes] 저장된 투표 데이터 복원(${when} 시점, 사용자 ${userVotes.size}명)`);
+    }
+  } catch {
+    /* 파일 없음/최초 실행/손상 시 빈 상태로 시작 */
+  }
+}
+
+function saveVoteState() {
+  try {
+    const data = {
+      userVotes: [...userVotes.entries()],
+      teamCounts: [...teamCounts.entries()],
+      anonVoteSeq,
+      savedAt: Date.now(),
+    };
+    fs.writeFileSync(VOTES_STATE_PATH, JSON.stringify(data), "utf8");
+  } catch (e) {
+    console.error("[votes] 저장 실패(메모리 집계는 계속 정상 동작):", e.message);
+  }
+}
+
 let nativePoll = null; // 네이티브 설문 감지 시 { question, options:[{label,votes}], total }
 let onAir = false; // 송출 상태 (layout.html 그래픽 fade in/out)
 let tallying = true; // 집계 상태 (false 면 득표 집계 정지 = 투표 종료)
@@ -188,6 +232,12 @@ function registerVote(channelId, teamKey) {
   if (config.poll.oneVotePerUser && userVotes.get(id) === teamKey) return false;
   userVotes.set(id, teamKey);
   teamCounts.set(teamKey, (teamCounts.get(teamKey) || 0) + 1);
+  // 매 표마다 파일에 쓰지 않고, VOTE_SAVE_EVERY 표가 쌓일 때마다 한 번씩만 저장
+  // (+ 정상 종료 시 별도로 1회 더 저장 — 아래 SIGINT/SIGTERM 핸들러 참고).
+  if (++voteSaveCounter >= VOTE_SAVE_EVERY) {
+    voteSaveCounter = 0;
+    saveVoteState();
+  }
   return true;
 }
 
@@ -952,9 +1002,11 @@ function resetStats() {
   userVotes.clear();
   teamCounts.clear();
   anonVoteSeq = 0;
+  voteSaveCounter = 0;
   nativePoll = null;
   chatHistory.length = 0;
   tallying = true; // 리셋 시 집계 재개(새 투표 시작)
+  saveVoteState(); // 리셋된 빈 상태를 즉시 저장 — 재시작해도 리셋 이전 데이터가 되살아나지 않게
 }
 
 function restartFromConfig(newConfig, keepStats) {
@@ -967,6 +1019,17 @@ function restartFromConfig(newConfig, keepStats) {
 }
 
 // ---------- boot ----------
+loadVoteState(); // 이전 실행에서 저장해둔 투표 데이터가 있으면 복원
+
+// 정상 종료(Ctrl+C 등) 시 마지막 표까지 1회 더 저장 — VOTE_SAVE_EVERY 경계 사이에서
+// 종료돼도 최근 몇 표만 유실되고(주기 저장 이후분), 그 이상은 잃지 않는다.
+function saveVoteStateAndExit() {
+  saveVoteState();
+  process.exit(0);
+}
+process.on("SIGINT", saveVoteStateAndExit);
+process.on("SIGTERM", saveVoteStateAndExit);
+
 server.on("error", (err) => {
   if (err.code === "EADDRINUSE") {
     console.error("==================================================");

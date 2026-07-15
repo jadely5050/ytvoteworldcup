@@ -8,6 +8,9 @@ node_modules/
 *.log
 npm-debug.log*
 
+# 투표 데이터 스냅샷(방송별 런타임 상태 — 저장소에 커밋할 필요 없음)
+votes-state.json
+
 # OS / 에디터
 .DS_Store
 Thumbs.db
