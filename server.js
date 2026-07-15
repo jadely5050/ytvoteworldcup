@@ -101,10 +101,12 @@ function extractChzzkChannelId(input) {
 // ---------- state ----------
 const CHAT_HISTORY_MAX = 30;
 const chatHistory = [];
-/** authorChannelId -> teamKey (oneVotePerUser 일 때 마지막 표 기준) */
+/** authorChannelId -> teamKey (중복불허 뷰: 각 사용자의 "마지막 표") */
 const userVotes = new Map();
-/** teamKey -> count (oneVotePerUser=false 일 때 누적) */
+/** teamKey -> count (중복허용 뷰: 인정된 모든 표의 누적 이벤트 수) */
 const rawCounts = new Map();
+/** channelId 없는(익명) 표에 고유 키를 부여하기 위한 증가 시퀀스 */
+let anonVoteSeq = 0;
 let nativePoll = null; // 네이티브 설문 감지 시 { question, options:[{label,votes}], total }
 let onAir = false; // 송출 상태 (layout.html 그래픽 fade in/out)
 let tallying = true; // 집계 상태 (false 면 득표 집계 정지 = 투표 종료)
@@ -161,15 +163,24 @@ function matchStarVote(text) {
   return team ? team.key : null;
 }
 
+/**
+ * 표 1건을 두 통계에 "항상 함께" 반영한다.
+ *  - rawCounts (중복허용 뷰): 인정된 모든 표를 누적
+ *  - userVotes (중복불허 뷰): 사용자별 마지막 표
+ * 두 뷰를 늘 함께 유지해야, 방송 중 중복허용/불허 토글을 바꿔도 화면이 "한 번도
+ * 안 채워진 반대편 창고(낡은 값)"로 튀지 않는다. tallyKeyword() 가 현재 토글에
+ * 맞는 뷰를 골라 보여줄 뿐, 어느 쪽도 데이터가 사라지지 않는다.
+ * 반환값: 이 표가 "새 변화"인지(true) — 중복불허에서 같은 유저가 같은 팀에 재투표하면
+ *         화면상 변화가 없으므로 false(재브로드캐스트/득표 애니메이션 생략).
+ */
 function registerVote(channelId, teamKey) {
   if (!teamKey) return false;
-  if (config.poll.oneVotePerUser) {
-    const id = channelId || `anon-${userVotes.size}`;
-    if (userVotes.get(id) === teamKey) return false;
-    userVotes.set(id, teamKey);
-  } else {
-    rawCounts.set(teamKey, (rawCounts.get(teamKey) || 0) + 1);
-  }
+  const id = channelId || `anon-${anonVoteSeq++}`;
+  const repeatSameTeam = userVotes.get(id) === teamKey;
+  rawCounts.set(teamKey, (rawCounts.get(teamKey) || 0) + 1);
+  userVotes.set(id, teamKey);
+  // 중복불허 모드에서 같은 팀 재투표는 표시 숫자가 그대로이므로 갱신 신호를 아낀다.
+  if (config.poll.oneVotePerUser && repeatSameTeam) return false;
   return true;
 }
 
@@ -939,6 +950,7 @@ function stopSources() {
 function resetStats() {
   userVotes.clear();
   rawCounts.clear();
+  anonVoteSeq = 0;
   nativePoll = null;
   chatHistory.length = 0;
   tallying = true; // 리셋 시 집계 재개(새 투표 시작)
