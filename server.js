@@ -215,21 +215,24 @@ function matchStarVote(text) {
  *
  *  - 중복허용(oneVotePerUser=false): 매 표마다 무조건 +1.
  *  - 중복불허(oneVotePerUser=true): 이 사용자의 "마지막 표"가 이번과 같으면
- *    무시(중복 방지). 다르면(A→B 변심 포함) 새 팀에 +1 — 단, 이전 팀에서는
- *    -1 하지 않는다(한 번 오른 숫자는 안 내려간다는 방송 요구사항).
- *    즉 우유부단하게 여러 번 바꾸면 그때마다 새 팀에 +1 씩 더 쌓일 수 있다.
+ *    무시(중복 방지). 다르면(A→B 변심)이면 이전 팀 -1, 새 팀 +1 로 정확히
+ *    옮긴다 — 화면에 보이는 수치가 항상 실제 득표 상황과 일치해야 한다.
  *
  * userVotes(사용자별 마지막 표)는 모드와 무관하게 항상 갱신 — 중복허용 중에도
  * 기록해둬야, 나중에 중복불허로 바뀐 순간부터 "누가 이미 투표했었는지"를
  * 정확히 판단할 수 있다.
  *
- * 반환값: 실제로 카운터가 올라간 새 변화인지(true) — 화면 갱신/득표 애니메이션
+ * 반환값: 실제로 카운터가 바뀐 새 변화인지(true) — 화면 갱신/득표 애니메이션
  *         트리거 여부에 쓰인다.
  */
 function registerVote(channelId, teamKey) {
   if (!teamKey) return false;
   const id = channelId || `anon-${anonVoteSeq++}`;
-  if (config.poll.oneVotePerUser && userVotes.get(id) === teamKey) return false;
+  const prevTeamKey = userVotes.get(id);
+  if (config.poll.oneVotePerUser) {
+    if (prevTeamKey === teamKey) return false; // 같은 팀 재투표 — 무시
+    if (prevTeamKey) teamCounts.set(prevTeamKey, Math.max(0, (teamCounts.get(prevTeamKey) || 0) - 1)); // 변심: 이전 팀에서 -1
+  }
   userVotes.set(id, teamKey);
   teamCounts.set(teamKey, (teamCounts.get(teamKey) || 0) + 1);
   // 매 표마다 파일에 쓰지 않고, VOTE_SAVE_EVERY 표가 쌓일 때마다 한 번씩만 저장

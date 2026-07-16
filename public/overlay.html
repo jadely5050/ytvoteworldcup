@@ -139,8 +139,12 @@
     display: flex; align-items: flex-end; justify-content: center;
     gap: 40px; padding: 8px 4px 4px;
   }
-  /* 칸: 이름(위) + [그림 + 득표수](아래) 세로 배치 */
-  .icell { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  /* 칸: 이름(위) + [그림 + 득표수](아래) 세로 배치.
+     이름은 그림(iart) 과 폭이 같아야 그림 기준 가운데 정렬이 되므로, icell 은
+     flex-start 로 두고(가운데 정렬은 icell 이 아니라 이름 박스 자신의 폭+
+     text-align 이 담당), 이름 요소의 width 를 JS 에서 그림 폭과 항상 동일하게
+     맞춘다(buildImageCell 참고) — 득표수(inums) 폭은 정렬 기준에서 제외된다. */
+  .icell { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
   .iname {
     font-size: 34px; font-weight: 800; letter-spacing: -.5px; white-space: nowrap;
     text-align: center; max-width: 420px; overflow: hidden; text-overflow: ellipsis;
@@ -489,7 +493,10 @@ function buildImageCell(t, n) {
   const art = document.createElement("div");
   art.className = "iart";
   art.style.height = box.h + "px";
-  art.style.width = box.h + "px"; // 기본 정사각(고정) → 프레임 바뀌어도 안 들썩임
+  // 이름(iname)의 폭을 그림 폭과 항상 맞춰야 "그림 기준 가운데 정렬"이 된다
+  // (득표수 칸이 옆에 붙어 폭이 늘어나도 이름 정렬엔 영향 없게).
+  const setArtWidth = (w) => { art.style.width = w + "px"; nameEl.style.width = w + "px"; };
+  setArtWidth(box.h); // 기본 정사각(고정) → 프레임 바뀌어도 안 들썩임
 
   // 시퀀스 프레임 preload (캐시 → src 교체 시 깜빡임 없음)
   const frames = [];
@@ -503,7 +510,7 @@ function buildImageCell(t, n) {
     // 첫 프레임 비율로 박스 폭을 한 번만 확정(좌우 여백 최소화, 이후 고정)
     const fitBox = () => {
       const w = frames[0].naturalWidth, h = frames[0].naturalHeight;
-      if (w && h) art.style.width = Math.round(box.h * (w / h)) + "px";
+      if (w && h) setArtWidth(Math.round(box.h * (w / h)));
     };
     if (frames[0].complete) fitBox(); else frames[0].onload = fitBox;
     img = document.createElement("img");
@@ -511,7 +518,7 @@ function buildImageCell(t, n) {
     img.alt = t.name || "";
     art.appendChild(img);
   } else {
-    art.style.width = box.w + "px"; // 그림 없을 때만 고정 폭
+    setArtWidth(box.w); // 그림 없을 때만 고정 폭
     art.classList.add("placeholder");
     art.textContent = t.name || "?";
   }
